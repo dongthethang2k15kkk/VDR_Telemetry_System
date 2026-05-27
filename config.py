@@ -26,7 +26,7 @@ TELEMETRY_SCHEMA = {
     0x05: {"label": "Coolant Temp", "unit": "°C"},
 }
 
-SAMPLING_RATE_HZ: Final[int] = 10
+SAMPLING_RATE_HZ: Final[int] = 10  #NGUY HIỂM
 
 # Số ngày giữ lại dữ liệu telemetry trong DB.
 # Bản ghi cũ hơn ngưỡng này sẽ bị xóa khi kích hoạt dọn dẹp.
@@ -37,10 +37,10 @@ if OPERATION_MODE == "SIMULATION":
     VIDEO_SOURCE: Final[str] = "assets/sample_video.mp4"
 else:
     # Link luồng RTSP từ Camera IP
-    VIDEO_SOURCE: Final[str] = "rtsp://192.168.1.10:554/user=admin&password=&channel=1&stream=0.sdp"
+   VIDEO_SOURCE: Final[str] = "rtsp://10.10.10.20:554/user=admin&password=&channel=1&stream=0.sdp"
 
 # Đường dẫn file video xuất ra sau khi Render xong
-OUTPUT_VIDEO_PATH: Final[str] = str(STORAGE_DIR / "output_hud.mp4")
+OUTPUT_VIDEO_PATH: Final[str] = str(STORAGE_DIR / "crash_evidence.ts")
 
 # Đường dẫn Font chữ (Tự động đổi theo môi trường Windows/Linux)
 if OPERATION_MODE == "SIMULATION":

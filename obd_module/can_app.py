@@ -3,31 +3,27 @@ import time
 import logging
 import signal
 from config import (CAN_INTERFACE, CAN_BUS_TYPE, CAN_BITRATE, OBD_REQUEST_ID, OBD_RESPONSE_ID, TELEMETRY_SCHEMA, SAMPLING_RATE_HZ)
-
-# SỬA LỖI IMPORT (Import Class thay vì object dùng chung)
 from obd_module.db_setup import TelemetryDBWriter
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s.%(msecs)03d [%(levelname)s] %(message)s')
 logger = logging.getLogger("READER")
 
 class OBDReader:
-    def __init__(self):
-        self.running = True 
-        signal.signal(signal.SIGTERM, self._handle_shutdown)
-        signal.signal(signal.SIGINT, self._handle_shutdown)
+    def __init__(self):   #khởi động
+        self.running = True #xác nhận hệ thống đang chạy
+        signal.signal(signal.SIGTERM, self._handle_shutdown)  #SIGTERM:tắt máy chủ động, sigint là ctrlC
+        signal.signal(signal.SIGINT, self._handle_shutdown)  #gài bẫy chặn rút điện đột ngột
         
-        self.bus = self._init_can_bus()
-        
-        # SỬA LỖI MULTIPROCESSING: Tự tạo DB Writer riêng nằm trọn trong tiến trình con
-        self.db_writer = TelemetryDBWriter()
+        self.bus = self._init_can_bus()    #chạy xuống dưới thực thi hàm cắm cáp
+        self.db_writer = TelemetryDBWriter()        
 
-    def _init_can_bus(self):
+    def _init_can_bus(self):         #hàm cắm cáp
         try:
             return can.interface.Bus(channel=CAN_INTERFACE, bustype=CAN_BUS_TYPE, bitrate=CAN_BITRATE)
         except Exception as e:
             print(f"⚠️ [OBD INIT LỖI]: Không thể mở cổng CAN ({e})")
             return None
-
+ 
     def _handle_shutdown(self, signum, frame):
         print("\n🔌 Nhận tín hiệu tắt máy. Đang dọn dẹp CAN Bus...")
         self.running = False

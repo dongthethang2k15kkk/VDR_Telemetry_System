@@ -75,14 +75,18 @@ def render_glass_hud(frame, speed, rpm, throttle, temp, fonts):
     return cv2.cvtColor(np.array(pil_im), cv2.COLOR_RGBA2BGR)
 
 def get_hardware_video_writer(output_path, fps, width, height):
-    """Trình xuất video hỗ trợ Hardware Acceleration cho Orange Pi"""
-    if OPERATION_MODE == "PRODUCTION":
-        print("🚀 Kích hoạt mpph264enc (Hardware VPU) cho Rockchip...")
-        gst_str = f"appsrc ! videoconvert ! mpph264enc ! h264parse ! mp4mux ! filesink location={output_path}"
-        return cv2.VideoWriter(gst_str, cv2.CAP_GSTREAMER, 0, fps, (width, height))
-    else:
+    if OPERATION_MODE == "SIMULATION":
+        # mp4v không ra .ts được, dùng ffmpeg subprocess thay thế
+        # Hoặc giữ mp4 cho simulation, chỉ .ts trên Pi thật
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         return cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    else:
+        gstreamer = (
+            f"appsrc ! videoconvert ! video/x-raw,format=NV12 "
+            f"! mpph264enc ! h264parse ! mpegtsmux "
+            f"! filesink location={output_path}"
+        )
+        return cv2.VideoWriter(gstreamer, cv2.CAP_GSTREAMER, 0, fps, (width, height), True)
 
 def main():
     print("🎬 KHỞI ĐỘNG HỆ THỐNG RENDER HUD...")

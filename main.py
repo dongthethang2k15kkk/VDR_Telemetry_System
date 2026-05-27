@@ -32,7 +32,6 @@ def main():
         finally:
             print("🧹 Đang dọn dẹp hệ thống giả lập...")
             ecu.stop()
-            # Đã sửa: Gọi flush từ chính instance của reader
             if hasattr(reader, 'db_writer'):
                 reader.db_writer.flush()
             print("✅ Đã ngắt giả lập.")

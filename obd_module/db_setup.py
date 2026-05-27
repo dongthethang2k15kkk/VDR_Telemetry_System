@@ -5,7 +5,7 @@ from config import DATABASE_PATH
 # Hàm chạy 1 lần ở main.py để khởi tạo bảng chuẩn
 def init_db():
     conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA journal_mode=WAL;")    #luồng đọc và ghi chạy song song
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS obd_data (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +41,6 @@ class TelemetryDBWriter:
     def flush(self):
         if not self.queue:
             return
-        # Đã đổi timestamp_ms thành timestamp_sec ở đây
         self.cursor.executemany(
             "INSERT INTO obd_data (timestamp_sec, pid, pid_name, value, unit) VALUES (?,?,?,?,?)",
             self.queue

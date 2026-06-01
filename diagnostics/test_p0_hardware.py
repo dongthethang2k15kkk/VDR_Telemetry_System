@@ -29,3 +29,5 @@ except serial.SerialException as e:
     print(f"[-] LỖI [OS_ERR_03]: Cổng bị chiếm dụng (Device Busy) hoặc lỗi quyền truy cập. Chi tiết: {e}")
     print("    [KHẮC PHỤC]: Chạy lệnh 'sudo chmod a+rw /dev/ttyACM0' HOẶC giải phóng cổng: 'sudo fuser -k /dev/ttyACM0'")
     sys.exit(1)
+
+print("[+] PHASE 0 PASS: Tầng vật lý và OS sạch.")

@@ -26,7 +26,7 @@ TELEMETRY_SCHEMA = {
     0x05: {"label": "Coolant Temp", "unit": "°C"},
 }
 
-SAMPLING_RATE_HZ: Final[int] = 10  #NGUY HIỂM
+SAMPLING_RATE_HZ: Final[int] = 5
 
 # Số ngày giữ lại dữ liệu telemetry trong DB.
 # Bản ghi cũ hơn ngưỡng này sẽ bị xóa khi kích hoạt dọn dẹp.

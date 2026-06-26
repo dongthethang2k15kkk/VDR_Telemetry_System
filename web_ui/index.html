@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BK-AutoBlackBox — VDR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600;700&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ====== MAN DANG NHAP ====== -->
+<div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+        <div class="login-logo">BK-AutoBlackBox</div>
+        <div class="login-title">Hệ thống Giám sát &amp; Chẩn đoán Hành trình Xe</div>
+        <div class="login-sub">Vui lòng đăng nhập để tiếp tục</div>
+        <input type="password" class="login-input" id="loginPassword" placeholder="Nhập mật khẩu" autocomplete="off">
+        <button class="btn login-btn" id="btnLogin">Đăng nhập hệ thống</button>
+        <div class="login-error hidden" id="loginError">Sai mật khẩu, thử lại</div>
+    </div>
+</div>
+
+<div id="simBadge" class="sim-badge hidden">SIMULATION</div>
+
+<div class="dashboard-grid">
+
+<!-- ====== ZONE 1: VIDEO ====== -->
+<div class="zone-1 panel">
+    <div class="video-container">
+        <div id="videoPlaceholder" class="video-placeholder">
+            <svg class="placeholder-icon" xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/>
+            </svg>
+            <span class="placeholder-text">Chưa có tín hiệu — kết nối luồng</span>
+        </div>
+        <video id="videoElement" autoplay muted playsinline></video>
+    </div>
+    <div class="hud-overlay">
+        <div class="hud-rec"><div class="rec-dot"></div>REC</div>
+        <div class="hud-ts" id="hudTimestamp">--:--:--</div>
+        <div class="hud-speed"><span id="hudSpeed">000</span><span class="hud-speed-unit">km/h</span></div>
+    </div>
+</div>
+
+<!-- ====== ZONE 2: DỮ LIỆU XE (gauge + chart) ====== -->
+<div class="zone-2 panel">
+    <div class="panel-head">
+        <span class="panel-title">Dữ liệu xe</span>
+        <div class="conn-indicator">
+            <div class="status-led led-offline" id="wsStatusLed"></div>
+            <span id="wsStatusText">DISCONNECTED</span>
+        </div>
+    </div>
+    <div class="gauges-container">
+        <div class="gauge-wrapper" id="speedGauge"><div class="gauge-label">Tốc độ</div></div>
+        <div class="gauge-wrapper" id="rpmGauge"><div class="gauge-label">Vòng tua</div></div>
+        <div class="gauge-wrapper" id="brakeGauge"><div class="gauge-label">Chân ga</div></div>
+    </div>
+    <div class="chart-container">
+        <div id="historyChart" style="width:100%;height:100%;"></div>
+    </div>
+</div>
+
+<!-- ====== ZONE 3: BẢO DƯỠNG ====== -->
+<div class="zone-3 panel">
+    <div class="panel-head">
+        <span class="panel-title">Bảo dưỡng</span>
+        <button class="btn-icon" id="btnMaintHistory" title="Lịch sử bảo dưỡng">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </button>
+    </div>
+    <div class="panel-body">
+        <div class="odo-row">
+            <span class="odo-current">ODO: <b id="odoCurrent">--</b> km</span>
+            <input type="number" class="hz-input odo-input" id="odoInput" min="0" step="1" placeholder="km thật">
+            <button class="btn btn-ghost odo-save-btn" id="btnSaveOdo">Lưu</button>
+        </div>
+        <ul class="maint-list" id="maintList"></ul>
+    </div>
+</div>
+
+<!-- ====== ZONE 4: CHẨN ĐOÁN (DTC + Dự báo) ====== -->
+<div class="zone-4 panel">
+    <div class="panel-head"><span class="panel-title">Chẩn đoán</span></div>
+    <div class="panel-body">
+        <div class="sub-section">
+            <div class="sub-label">Mã lỗi (DTC)</div>
+            <button class="btn btn-ghost dtc-scan-btn" id="btnDtcScan">Quét mã lỗi</button>
+            <ul class="dtc-list" id="dtcList"></ul>
+        </div>
+        <div class="sub-section">
+            <div class="sub-label">Dự báo bảo dưỡng</div>
+            <ul class="pred-list" id="predList"></ul>
+        </div>
+    </div>
+</div>
+
+<!-- ====== ZONE 5: NHẬT KÝ SỰ CỐ ====== -->
+<div class="zone-5 panel">
+    <div class="panel-head">
+        <span class="panel-title">Nhật ký sự cố</span>
+        <div class="log-header-badge" id="eventCount">0</div>
+        <div class="head-actions">
+            <button class="btn-icon" id="btnExport" title="Xuất CSV">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </button>
+            <button class="btn-icon" id="btnClear" title="Xoá log">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+        </div>
+    </div>
+    <div class="log-container">
+        <div id="logEmpty" class="log-empty">
+            <svg class="log-empty-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            <span class="log-empty-text">Chưa có sự cố</span>
+        </div>
+        <ul class="incident-list" id="incidentList"></ul>
+    </div>
+</div>
+
+<!-- ====== ZONE 6: ĐIỀU KHIỂN (dải ngang gọn) ====== -->
+<div class="zone-6 panel">
+    <div class="ctrl-strip">
+        <div class="ctrl-group">
+            <button class="btn btn-connect" id="btnConnect">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                Kết nối
+            </button>
+            <button class="btn btn-disconnect" id="btnDisconnect">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Ngắt
+            </button>
+        </div>
+        <div class="ctrl-divider"></div>
+        <div class="ctrl-group">
+            <span class="ctrl-mini-label">Chế độ</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="toggleMode"><span class="slider"></span>
+            </label>
+            <span class="toggle-label" id="modeLabel">LIVE</span>
+        </div>
+        <div class="ctrl-divider"></div>
+        <div class="ctrl-group">
+            <span class="ctrl-mini-label">Tần số</span>
+            <input type="range" class="hz-slider" id="hzSlider" min="0.05" max="5" step="0.05" value="1">
+            <input type="number" class="hz-input" id="hzInput" min="0.05" max="5" step="0.05" value="1">
+            <span class="hz-unit">Hz</span>
+        </div>
+        <div class="ctrl-divider"></div>
+        <div class="ctrl-group ctrl-sysinfo">
+            <span class="sys-chip">WS: <b id="infoWsUrl">—</b></span>
+            <span class="sys-chip">Tần số: <b class="green" id="infoHz">10 Hz</b></span>
+            <span class="sys-chip">Chế độ: <b class="amber" id="infoMode">LIVE</b></span>
+            <span class="sys-chip">Sự kiện: <b class="red" id="infoEvents">0</b></span>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<!-- ====== Modal: Lịch sử bảo dưỡng ====== -->
+<div class="modal-overlay hidden" id="maintHistoryOverlay">
+    <div class="modal-panel">
+        <div class="modal-head">
+            <span class="modal-title">Lịch sử bảo dưỡng</span>
+            <button class="btn-icon" id="btnCloseMaintHistory">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="maint-history-empty hidden" id="maintHistoryEmpty">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Chưa có lịch sử</span>
+            </div>
+            <ul class="maint-history-list" id="maintHistoryList"></ul>
+        </div>
+    </div>
+</div>
+
+<div class="disconnect-overlay hidden" id="disconnectOverlay">
+    <div class="overlay-card">
+        <div class="overlay-dot"></div>
+        <span class="overlay-text" id="reconnectText">MẤT KẾT NỐI</span>
+    </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ====== Thanh tab dưới (chỉ hiện trên điện thoại) ====== -->
+<nav class="tab-bar" id="tabBar">
+    <button class="tab-item active" data-tab="drive">
+        <svg class="tab-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12h2m14 0h2M12 3v2m0 14v2"/><circle cx="12" cy="12" r="9"/></svg>
+        <span>Lái xe</span>
+    </button>
+    <button class="tab-item" data-tab="maint">
+        <svg class="tab-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6.3 6.3a1 1 0 0 0 1.4 1.4l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2-2 2.3-2.3z"/></svg>
+        <span>Bảo dưỡng</span>
+    </button>
+    <button class="tab-item" data-tab="diag">
+        <svg class="tab-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Chẩn đoán</span>
+    </button>
+    <button class="tab-item" data-tab="ctrl">
+        <svg class="tab-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        <span>Cài đặt</span>
+    </button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>

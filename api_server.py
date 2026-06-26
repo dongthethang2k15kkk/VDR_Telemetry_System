@@ -1,0 +1,448 @@
+import datetime
+import cv2
+from fastapi.responses import StreamingResponse
+import sqlite3
+import asyncio
+import time
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+# Import chuẩn từ config
+from config import DATABASE_PATH, SAMPLING_RATE_HZ, LAB_PASSWORD
+
+app = FastAPI(title="BK-AutoBlackBox API")
+
+
+@app.post("/api/login")
+def lab_login(payload: dict):
+    """Kiem tra mat khau Lab (so voi config.py)."""
+    pw = (payload or {}).get("password", "")
+    if pw == LAB_PASSWORD:
+        return {"status": "success"}
+    raise HTTPException(status_code=401, detail="Sai mat khau")
+
+# Mở CORS để Web UI gọi API thoải mái
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ==========================================
+# KHỐI 1: KHỞI TẠO & DB HELPER
+# ==========================================
+def get_db():
+    """Tạo connection read-only độc lập"""
+    conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# ==========================================
+# KHỐI 2: REST ENDPOINTS (Xử lý Alert)
+# ==========================================
+@app.get("/api/alerts")
+def get_unresolved_alerts():
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, timestamp_sec, alert_type, description 
+            FROM maintenance_logs 
+            WHERE is_resolved = 0 
+            ORDER BY timestamp_sec DESC
+        ''')
+        alerts = [dict(row) for row in cursor.fetchall()]
+        return {"status": "success", "data": alerts}
+    finally:
+        conn.close() # Đảm bảo luôn đóng connection dù có lỗi hay không
+
+@app.put("/api/alerts/{alert_id}/resolve")
+def resolve_alert(alert_id: int):
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        now = time.time()
+        
+        cursor.execute('''
+            UPDATE maintenance_logs 
+            SET is_resolved = 1, resolved_at = ? 
+            WHERE id = ? AND is_resolved = 0
+        ''', (now, alert_id))
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Alert not found or already resolved")
+            
+        conn.commit()
+        return {"status": "success", "message": f"Alert {alert_id} resolved"}
+    finally:
+        conn.close() # Đảm bảo luôn đóng connection
+
+
+# ==========================================
+# KHỐI 3: WEBSOCKET ENDPOINT (Real-time)
+# ==========================================
+@app.websocket("/ws/telemetry")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        while True:
+            # Lấy data Telemetry mới nhất (4 PIDs)
+            cursor.execute('''
+                SELECT timestamp_sec, pid_name, value, unit 
+                FROM obd_data 
+                ORDER BY timestamp_sec DESC 
+                LIMIT 4
+            ''')
+            telemetry_raw = cursor.fetchall()
+            
+            telemetry_data = {}
+            latest_ts = 0
+            for row in telemetry_raw:
+                telemetry_data[row['pid_name']] = row['value']
+                if row['timestamp_sec'] > latest_ts:
+                    latest_ts = row['timestamp_sec']
+
+            # Lấy alert mới nhất chưa đọc
+            cursor.execute('''
+                SELECT id, alert_type, description 
+                FROM maintenance_logs 
+                WHERE is_resolved = 0 
+                ORDER BY timestamp_sec DESC 
+                LIMIT 1
+            ''')
+            latest_alert = cursor.fetchone()
+
+            # Đóng gói JSON
+            payload = {
+                "timestamp": latest_ts,
+                "telemetry": telemetry_data,
+                "latest_alert": dict(latest_alert) if latest_alert else None
+            }
+
+            # Bắn lên Client
+            await websocket.send_json(payload)
+            
+            # Ngủ 100ms (10Hz)
+            await asyncio.sleep(1.0 / SAMPLING_RATE_HZ)
+            
+    except WebSocketDisconnect:
+        print("🔌 Web UI đã ngắt kết nối WebSocket.")
+    except Exception as e:
+        print(f"⚠️ Lỗi WebSocket: {e}")
+    finally:
+        conn.close() # Đã có sẵn block dọn dẹp an toàn khi đứt kết nối
+
+def _gen_frames():
+    from config import VIDEO_SOURCE
+    cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_FFMPEG)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            cap.release()
+            cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_FFMPEG)
+            continue
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cv2.putText(frame, now_str, (frame.shape[1]-320, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 3)
+        cv2.putText(frame, now_str, (frame.shape[1]-320, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,220,80), 1)
+        _, jpg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
+               + jpg.tobytes() + b'\r\n')
+
+@app.get("/stream/camera")
+def camera_stream():
+    return StreamingResponse(
+        _gen_frames(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+# ==========================================
+# KHỐI 4: ENTRY POINT
+# ==========================================
+
+@app.get("/api/maintenance/history")
+def get_maintenance_history():
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT id, timestamp_sec, item, km_at_service, note FROM maintenance_history ORDER BY timestamp_sec DESC LIMIT 100"
+        ).fetchall()
+        return {"status": "success", "data": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+def run_fastapi_server():
+    print("🌐 Đang khởi động API Server (FastAPI) tại port 8080...")
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="warning", reload=False, workers=1, timeout_graceful_shutdown=1)
+
+# ==========================================
+# KHỐI 5: MAINTENANCE / BẢO DƯỠNG (REST)
+# ==========================================
+def _current_odo(cursor) -> float:
+    """ODO hiện tại = base_odo người dùng nhập + tổng km các chuyến đã lưu."""
+    row = cursor.execute("SELECT value FROM system_config WHERE key='base_odo'").fetchone()
+    base_odo = row["value"] if row else 0.0
+    trip = cursor.execute("SELECT COALESCE(SUM(total_km), 0) AS s FROM trip_logs").fetchone()
+    # Fix#2: cong them km chuyen dang chay (RuleEngine persist xuong system_config) -> 1 nguon su that
+    _live = cursor.execute("SELECT value FROM system_config WHERE key='live_trip_km'").fetchone()
+    live_km = float(_live["value"]) if _live and _live["value"] else 0.0
+    return float(base_odo) + float(trip["s"] if trip else 0.0) + live_km
+
+
+@app.get("/api/maintenance")
+def get_maintenance():
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        current_odo = _current_odo(cur)
+        # Task1f: tong gio no may tu trip_logs
+        _eh_row = cur.execute("SELECT COALESCE(SUM(engine_hours), 0) AS s FROM trip_logs").fetchone()
+        _live_eh = cur.execute("SELECT value FROM system_config WHERE key='live_trip_eh'").fetchone()
+        _live_eh_v = float(_live_eh["value"]) if _live_eh and _live_eh["value"] else 0.0
+        total_engine_hours = float(_eh_row["s"] if _eh_row else 0.0) + _live_eh_v  # Fix#2
+        items = []
+        rows = cur.execute(
+            "SELECT item, interval_km, interval_days, last_km, last_date, status, last_engine_hours, interval_engine_hours FROM maintenance_schedule"
+        ).fetchall()
+        for r in rows:
+            km_used = current_odo - (r["last_km"] or 0)
+            km_ratio = (km_used / r["interval_km"] * 100) if r["interval_km"] else 0
+            days_used = (time.time() - r["last_date"]) / 86400.0 if r["last_date"] else 0
+            days_ratio = (days_used / r["interval_days"] * 100) if r["interval_days"] else 0
+            engine_hours_used = total_engine_hours - (r["last_engine_hours"] or 0)
+            interval_eh = r["interval_engine_hours"]
+            engine_hours_ratio = (engine_hours_used / interval_eh * 100) if interval_eh else 0
+            ratio = max(km_ratio, days_ratio, engine_hours_ratio)
+            km_left = round((r["interval_km"] or 0) - km_used, 1)
+            days_left = round(r["interval_days"] - days_used) if r["interval_days"] else None
+            engine_hours_left = round(interval_eh - engine_hours_used, 1) if interval_eh else None
+            severity = "critical" if ratio >= 100 else "warning" if ratio >= 90 else "ok"
+            items.append({
+                "item": r["item"],
+                "interval_km": r["interval_km"],
+                "interval_days": r["interval_days"],
+                "last_km": r["last_km"],
+                "km_used": round(km_used, 1),
+                "km_left": km_left,
+                "days_left": days_left,
+                "engine_hours_used": round(engine_hours_used, 1),
+                "engine_hours_left": engine_hours_left,
+                "interval_engine_hours": interval_eh,
+                "ratio": round(ratio, 1),
+                "severity": severity,  # Task1f
+            })
+        return {"status": "success", "current_odo": round(current_odo, 1), "data": items}
+    finally:
+        conn.close()
+
+
+@app.put("/api/maintenance/odometer")
+def set_odometer(payload: dict):
+    km = payload.get("km")
+    if km is None:
+        raise HTTPException(status_code=400, detail="Thiếu trường 'km'")
+    try:
+        km = float(km)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="'km' phải là số")
+    conn = get_db()
+    try:
+        conn.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('base_odo', ?)", (km,))
+        conn.commit()
+        return {"status": "success", "base_odo": km}
+    finally:
+        conn.close()
+
+
+@app.put("/api/maintenance/{item}/done")
+def mark_maintenance_done(item: str, payload: dict = None):
+    # Task5b: nhan note (tuy chon) tu body
+    note = (payload or {}).get("note", "") if isinstance(payload, dict) else ""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        current_odo = _current_odo(cur)
+        # Task5b: tong gio no may hien tai de reset chu ky (dong bo voi rule_engine.mark_maintained)
+        _eh = cur.execute("SELECT COALESCE(SUM(engine_hours), 0) FROM trip_logs").fetchone()
+        current_eh = float(_eh[0] if _eh else 0.0)
+        res = cur.execute(
+            "UPDATE maintenance_schedule SET last_km=?, last_date=?, status='🟢 Normal' WHERE item=?",
+            (current_odo, time.time(), item),
+        )
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Không có hạng mục bảo dưỡng này")
+        # Task5b: reset last_engine_hours (va lo hong: web bam done truoc day khong reset gio may)
+        cur.execute("UPDATE maintenance_schedule SET last_engine_hours=? WHERE item=?", (current_eh, item))
+        cur.execute(
+            "INSERT INTO maintenance_history (timestamp_sec, item, km_at_service, note) VALUES (?, ?, ?, ?)",
+            (time.time(), item, current_odo, note)
+        )
+        conn.commit()
+        return {"status": "success", "item": item, "reset_at_km": round(current_odo, 1)}
+    finally:
+        conn.close()
+
+
+# ==========================================
+# KHOI 7: DTC - MA LOI CHAN DOAN (Task2c)
+# ==========================================
+@app.post("/api/dtc/scan")
+def dtc_scan():
+    """Set co yeu cau quet -> reader chinh (giu bus) quet -> poll ket qua moi."""
+    import time as _t
+    conn = get_db()
+    try:
+        # Moc thoi gian truoc khi quet, de loc DTC moi
+        t0 = _t.time()
+        conn.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('dtc_scan_request', 1)")
+        conn.commit()
+        # Doi reader xu ly (poll toi da ~4s)
+        found = []
+        for _ in range(40):
+            _t.sleep(0.1)
+            rows = conn.execute(
+                "SELECT dtc_code, description FROM dtc_logs WHERE timestamp_sec >= ? ORDER BY id DESC",
+                (t0,),
+            ).fetchall()
+            if rows:
+                # gom unique
+                seen = set()
+                found = []
+                for r in rows:
+                    if r["dtc_code"] in seen:
+                        continue
+                    seen.add(r["dtc_code"])
+                    found.append({"code": r["dtc_code"], "description": r["description"]})
+                break
+            # neu co da bi xoa (reader da xu ly) ma khong co DTC -> thoat s-som
+            flag = conn.execute("SELECT value FROM system_config WHERE key='dtc_scan_request'").fetchone()
+            if flag and float(flag["value"] or 0) == 0 and _ > 2:
+                break
+        return {"status": "success", "count": len(found), "data": found}
+    finally:
+        conn.close()
+
+
+@app.get("/api/dtc/history")
+def dtc_history():
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, timestamp_sec, dtc_code, description, is_cleared "
+            "FROM dtc_logs ORDER BY id DESC LIMIT 100"
+        ).fetchall()
+        return {"status": "success", "data": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+@app.put("/api/dtc/{dtc_id}/clear")
+def dtc_clear(dtc_id: int):
+    conn = get_db()
+    try:
+        res = conn.execute("UPDATE dtc_logs SET is_cleared=1 WHERE id=?", (dtc_id,))
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Khong tim thay DTC")
+        conn.commit()
+        return {"status": "success", "id": dtc_id, "cleared": True}
+    finally:
+        conn.close()
+
+
+# ==========================================
+# KHOI 8: PREDICTIVE (Task3e) - tinh live
+# ==========================================
+@app.get("/api/maintenance/prediction")
+def get_prediction():
+    """Tinh du bao live moi lan goi (khong luu bang)."""
+    from obd_module.rule_engine import TrendAnalyzer
+    conn = get_db()
+    try:
+        results = TrendAnalyzer().analyze(conn.cursor())
+        conn.commit()  # vi analyze co the ghi maintenance_logs
+        return {"status": "success", "count": len(results), "data": results}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "data": []}
+    finally:
+        conn.close()
+
+
+# ==========================================
+# KHOI 9: FCM - DEVICE TOKENS (thong bao day)
+# ==========================================
+def _ensure_token_table(conn):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS device_tokens ("
+        "token TEXT PRIMARY KEY, "
+        "created_at REAL, "
+        "last_seen REAL)"
+    )
+
+
+def get_all_device_tokens():
+    """Tra ve list token da dang ky (cho fcm_sender dung)."""
+    conn = get_db()
+    try:
+        _ensure_token_table(conn)
+        rows = conn.execute("SELECT token FROM device_tokens").fetchall()
+        return [r["token"] for r in rows]
+    finally:
+        conn.close()
+
+
+def remove_device_tokens(tokens):
+    """Xoa token khong con hop le (callback tu fcm_sender)."""
+    if not tokens:
+        return
+    conn = get_db()
+    try:
+        _ensure_token_table(conn)
+        conn.executemany("DELETE FROM device_tokens WHERE token=?", [(t,) for t in tokens])
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.post("/api/register-token")
+def register_token(payload: dict):
+    """App gui FCM token len -> luu DB (de backend gui push)."""
+    import time as _t
+    token = (payload or {}).get("token", "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Thieu token")
+    conn = get_db()
+    try:
+        _ensure_token_table(conn)
+        now = _t.time()
+        conn.execute(
+            "INSERT INTO device_tokens (token, created_at, last_seen) VALUES (?,?,?) "
+            "ON CONFLICT(token) DO UPDATE SET last_seen=?",
+            (token, now, now, now)
+        )
+        conn.commit()
+        n = conn.execute("SELECT COUNT(*) FROM device_tokens").fetchone()[0]
+        return {"status": "success", "total_devices": n}
+    finally:
+        conn.close()
+
+
+@app.post("/api/unregister-token")
+def unregister_token(payload: dict):
+    """Huy dang ky token (app go thong bao / dang xuat)."""
+    token = (payload or {}).get("token", "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Thieu token")
+    conn = get_db()
+    try:
+        _ensure_token_table(conn)
+        conn.execute("DELETE FROM device_tokens WHERE token=?", (token,))
+        conn.commit()
+        return {"status": "success"}
+    finally:
+        conn.close()

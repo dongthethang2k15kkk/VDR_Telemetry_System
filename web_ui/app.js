@@ -1,0 +1,930 @@
+const CONFIG = {
+    WS_URL: `ws://${location.hostname}:8080/ws/telemetry`, 
+    API_URL: `http://${location.hostname}:8080/api`,       
+    STREAM_URL: `http://${location.hostname}:8080/stream/camera`,
+    MAX_RECONNECT_ATTEMPTS: 5,
+    RECONNECT_DELAY_MS: 3000,
+    UPDATE_HZ: 1
+};
+
+let state = {
+    mode: 'live',
+    isConnected: false,
+    reconnectAttempts: 0,
+    hz: CONFIG.UPDATE_HZ
+};
+
+function formatHudTime(unixTimestamp) {
+    const date = new Date(unixTimestamp * 1000);
+    const pad = n => String(n).padStart(2, "0");
+    const ms  = String(date.getMilliseconds()).padStart(3, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${ms}`;
+
+}
+// ============================================================
+// MODULE 2: WebSocket Manager
+// ============================================================
+let ws = null;
+
+function connectWebSocket() {
+    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+
+    UIController.setConnectionStatus('connecting');
+
+    try {
+        ws = new WebSocket(CONFIG.WS_URL);
+
+        ws.onopen = () => {
+            console.log("WebSocket connected");
+            state.isConnected = true;
+            state.reconnectAttempts = 0;
+            UIController.setConnectionStatus('connected');
+            IncidentLogManager.fetchUnresolvedAlerts(); // Tự động kéo log cảnh báo khi kết nối
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                processPayload(data);
+            } catch (err) {
+                console.warn("Malformed JSON payload:", event.data);
+            }
+        };
+
+        ws.onclose = () => {
+            console.log("WebSocket disconnected");
+            state.isConnected = false;
+            handleDisconnect();
+        };
+
+        ws.onerror = (err) => {
+            console.error("WebSocket error:", err);
+        };
+    } catch (err) {
+        console.error("Error creating WebSocket:", err);
+        handleDisconnect();
+    }
+}
+
+function disconnectWebSocket() {
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+    state.isConnected = false;
+    UIController.setConnectionStatus('disconnected');
+    UIController.hideDisconnectOverlay();
+}
+
+function handleDisconnect() {
+    UIController.setConnectionStatus('disconnected');
+    if (state.reconnectAttempts < CONFIG.MAX_RECONNECT_ATTEMPTS) {
+        state.reconnectAttempts++;
+        UIController.showDisconnectOverlay(state.reconnectAttempts);
+        setTimeout(() => {
+            connectWebSocket();
+        }, CONFIG.RECONNECT_DELAY_MS);
+    } else {
+        UIController.showDisconnectOverlay('max');
+    }
+}
+
+function sendCommand(cmdObj) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(cmdObj));
+    }
+}
+
+// Xử lý dữ liệu chuẩn từ FastAPI
+function processPayload(data) {
+    if (!data || !data.telemetry) return;
+
+    // Mapping key từ DB ra
+    const speed = data.telemetry['Vehicle Speed'] || 0;
+    const rpm = data.telemetry['Engine RPM'] || 0;
+    const throttle = data.telemetry['Throttle Position'] || 0; 
+    const temp = data.telemetry['Coolant Temp'] || 0;
+
+    const speedStr = Math.round(speed).toString().padStart(3, '0');
+    document.getElementById('hudSpeed').textContent = speedStr;
+    document.getElementById('hudTimestamp').textContent = formatHudTime(data.timestamp);
+
+
+    const telemetryPack = { speed_kmh: speed, rpm: rpm, brake_pedal: throttle };
+    GaugeRenderer.update(telemetryPack);
+    HistoryChartRenderer.update(data.timestamp, telemetryPack);
+    
+
+    if (data.latest_alert) {
+        IncidentLogManager.handleRealtimeAlert(data.latest_alert, data.timestamp, speed);
+    }
+}
+
+// ============================================================
+// MODULE 3: Gauge & Chart Renderer (ECharts)
+// ============================================================
+const HistoryChartRenderer = (function() {
+    let chart;
+    const MAX_POINTS = 300;
+    const labels = [], speedData = [], rpmData = [], brakeData = [];
+
+    function init() {
+        chart = echarts.init(document.getElementById('historyChart'), null, { renderer: 'canvas' });
+
+        const option = {
+            animation: false,
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: '#111820',
+                borderColor: '#1e2a36',
+                textStyle: { color: '#e8edf2', fontFamily: "'Geist Mono', monospace", fontSize: 11 }
+            },
+            legend: {
+                data: ['Speed', 'Throttle', 'RPM'],
+                textStyle: { color: '#4a5a6a', fontSize: 10, fontFamily: "'Geist Mono', monospace" },
+                top: 0, right: 0,
+                icon: 'circle',
+                itemWidth: 7,
+                itemHeight: 7
+            },
+            grid: { left: '3%', right: '4%', bottom: '2%', top: '24px', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: labels,
+                axisLabel: { show: false },
+                axisLine: { lineStyle: { color: '#1e2a36' } },
+                splitLine: { show: false }
+            },
+            yAxis: [
+                {
+                    type: 'value', min: 0, max: 150,
+                    position: 'left',
+                    splitLine: { lineStyle: { color: '#1a2430', type: 'dashed' } },
+                    axisLabel: { color: '#4a5a6a', fontSize: 10, fontFamily: "'Geist Mono', monospace" }
+                },
+                {
+                    type: 'value', min: 0, max: 8000,
+                    position: 'right',
+                    splitLine: { show: false },
+                    axisLabel: { color: '#4a5a6a', fontSize: 10, fontFamily: "'Geist Mono', monospace" }
+                }
+            ],
+            series: [
+                { name: 'Speed', type: 'line', data: speedData, showSymbol: false,
+                  itemStyle: { color: '#00e5b4' }, lineStyle: { width: 1.5 },
+                  areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [{ offset: 0, color: 'rgba(0,229,180,0.12)' }, { offset: 1, color: 'rgba(0,229,180,0)' }]
+                  }}
+                },
+                { name: 'Throttle', type: 'line', data: brakeData, showSymbol: false,
+                  itemStyle: { color: '#f5564a' }, lineStyle: { width: 1.5 }
+                },
+                { name: 'RPM', type: 'line', yAxisIndex: 1, data: rpmData, showSymbol: false,
+                  itemStyle: { color: '#4a9eff' }, lineStyle: { width: 1, type: 'dashed', opacity: 0.6 }
+                }
+            ]
+        };
+        chart.setOption(option);
+        window.addEventListener('resize', () => chart.resize());
+    }
+
+    function update(timestamp, telemetry) {
+        labels.push(formatHudTime(timestamp));
+        speedData.push(telemetry.speed_kmh);
+        rpmData.push(telemetry.rpm);
+        brakeData.push(telemetry.brake_pedal);
+
+        if (labels.length > MAX_POINTS) {
+            labels.shift(); speedData.shift(); rpmData.shift(); brakeData.shift();
+        }
+
+        chart.setOption({
+            xAxis: { data: labels },
+            series: [{ data: speedData }, { data: brakeData }, { data: rpmData }]
+        });
+    }
+
+    return { init, update };
+})();
+
+const GaugeRenderer = (function() {
+    let speedChart, rpmChart, brakeChart;
+
+    function getGaugeOption(min, max, color, unit) {
+        return {
+            animationDurationUpdate: 80,
+            backgroundColor: 'transparent',
+            series: [{
+                type: 'gauge',
+                center: ['50%', '72%'],
+                radius: '108%',
+                startAngle: 200,
+                endAngle: -20,
+                min, max,
+                splitNumber: 4,
+                itemStyle: { color },
+                progress: { show: true, width: 6, roundCap: true },
+                pointer: { show: true, length: '62%', width: 3, itemStyle: { color } },
+                axisLine: { roundCap: true, lineStyle: { width: 6, color: [[1, '#1a2430']] } },
+                axisTick: { show: false },
+                splitLine: { length: 8, lineStyle: { width: 1.5, color: '#2a3a4a' } },
+                axisLabel: { distance: 16, color: '#4a5a6a', fontSize: 9,
+                             fontFamily: "'Geist Mono', monospace" },
+                title: { show: false },
+                detail: {
+                    valueAnimation: true,
+                    offsetCenter: [0, '-18%'],
+                    fontSize: 20,
+                    fontWeight: 700,
+                    fontFamily: "'Geist Mono', monospace",
+                    color: '#e8edf2',
+                    formatter: `{value}${unit}`
+                },
+                data: [{ value: 0 }]
+            }]
+        };
+    }
+
+    function init() {
+        speedChart = echarts.init(document.getElementById('speedGauge'), null, { renderer: 'canvas' });
+        rpmChart   = echarts.init(document.getElementById('rpmGauge'),   null, { renderer: 'canvas' });
+        brakeChart = echarts.init(document.getElementById('brakeGauge'), null, { renderer: 'canvas' });
+
+        speedChart.setOption(getGaugeOption(0, 150,  '#00e5b4', ''));
+        rpmChart.setOption(  getGaugeOption(0, 8000, '#4a9eff', ''));
+        brakeChart.setOption(getGaugeOption(0, 100,  '#f5564a', '%'));
+
+        window.addEventListener('resize', () => {
+            speedChart.resize(); rpmChart.resize(); brakeChart.resize();
+        });
+    }
+
+    let isBrakeCritical = false;
+
+    function update(telemetry) {
+        speedChart.setOption({ series: [{ data: [{ value: Math.round(telemetry.speed_kmh) }] }] });
+        rpmChart.setOption(  { series: [{ data: [{ value: Math.round(telemetry.rpm) }] }] });
+
+        const brakeVal = Math.round(telemetry.brake_pedal);
+        const el = document.getElementById('brakeGauge');
+
+        if (brakeVal > 80 && !isBrakeCritical) {
+            isBrakeCritical = true;
+            brakeChart.setOption({ series: [{ itemStyle: { color: '#ff3d30' }, progress: { itemStyle: { color: '#ff3d30' } } }] });
+            el.classList.add('gauge-pulse');
+        } else if (brakeVal <= 80 && isBrakeCritical) {
+            isBrakeCritical = false;
+            brakeChart.setOption({ series: [{ itemStyle: { color: '#f5564a' }, progress: { itemStyle: { color: '#f5564a' } } }] });
+            el.classList.remove('gauge-pulse');
+        }
+
+        brakeChart.setOption({ series: [{ data: [{ value: brakeVal }] }] });
+    }
+
+    return { init, update };
+})();
+
+// ============================================================
+// MODULE 4: Incident Log Manager (Đã nối API bảo dưỡng)
+// ============================================================
+const IncidentLogManager = (function() {
+    let logData = [];
+    let handledAlertIds = new Set();
+    const listEl  = document.getElementById('incidentList');
+    const countEl = document.getElementById('eventCount');
+    const emptyEl = document.getElementById('logEmpty');
+
+    // 1. Lấy toàn bộ danh sách cảnh báo từ API (Lúc mở trang)
+    async function fetchUnresolvedAlerts() {
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/alerts`);
+            const json = await res.json();
+            if (json.status === 'success') {
+                listEl.innerHTML = '';
+                logData = [];
+                handledAlertIds.clear();
+                
+                json.data.forEach(alert => {
+                    renderAlert(alert);
+                });
+            }
+        } catch(e) { console.warn("Lỗi kéo dữ liệu cảnh báo:", e); }
+    }
+
+    // 2. Gọi API để xác nhận "Đã bảo trì"
+    async function resolveAlert(id, event) {
+        event.stopPropagation(); // Ngăn kích hoạt logic bấm vào list để xem video
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/alerts/${id}/resolve`, { method: 'PUT' });
+            if (res.ok) {
+                UIController.showToast(`✅ Đã xác nhận bảo trì (ID: ${id})`);
+                const row = document.getElementById(`alert-row-${id}`);
+                if (row) {
+                    row.style.transform = 'translateY(10px)';
+                    row.style.opacity = '0';
+                    setTimeout(() => {
+                        row.remove();
+                        handledAlertIds.delete(id);
+                        updateCountUI();
+                    }, 300);
+                }
+            }
+        } catch(e) { console.error("Lỗi xác nhận cảnh báo:", e); }
+    }
+
+    // 3. Xử lý alert bắn về theo thời gian thực từ WS
+    function handleRealtimeAlert(alertObj, timestamp, speed) {
+        if (!alertObj || handledAlertIds.has(alertObj.id)) return;
+        renderAlert(alertObj, timestamp, speed);
+    }
+
+    function determineSeverityAndBadge(type) {
+        if (type.includes('HIGH')) return { iconClass: 'icon-critical', badgeClass: 'badge-red',   label: 'CRITICAL' };
+        if (type.includes('WARN')) return { iconClass: 'icon-warning',  badgeClass: 'badge-amber', label: 'WARNING'  };
+        return                            { iconClass: 'icon-info',     badgeClass: 'badge-blue',  label: 'INFO'     };
+    }
+
+    function updateCountUI() {
+        const count = listEl.children.length;
+        countEl.textContent = count;
+        document.getElementById('infoEvents').textContent = count;
+        if (count === 0) emptyEl.style.display = '';
+        else emptyEl.style.display = 'none';
+    }
+
+    function renderAlert(alertObj, timestamp = null, speed = null) {
+        emptyEl.style.display = 'none';
+        handledAlertIds.add(alertObj.id);
+
+        const timeStr = timestamp ? formatHudTime(timestamp) : formatHudTime(alertObj.timestamp_sec);
+        const speedStr = speed ? Math.round(speed).toString().padStart(3, '0') + ' km/h' : '-- km/h';
+        const styleInfo = determineSeverityAndBadge(alertObj.alert_type);
+
+        logData.unshift({ raw: alertObj });
+
+        let iconHtml = '';
+        if (styleInfo.iconClass === 'icon-critical') {
+            iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="row-icon ${styleInfo.iconClass}"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+        } else if (styleInfo.iconClass === 'icon-info') {
+            iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="row-icon ${styleInfo.iconClass}"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+        } else {
+            iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="row-icon ${styleInfo.iconClass}"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+        }
+
+        const li = document.createElement('li');
+        li.className = 'incident-row';
+        li.id = `alert-row-${alertObj.id}`;
+        li.innerHTML = `
+            ${iconHtml}
+            <span class="row-time">${timeStr}</span>
+            <span class="row-badge ${styleInfo.badgeClass}">${styleInfo.label}</span>
+            <span class="row-desc" title="${alertObj.description}">${alertObj.description}</span>
+            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 10px;" onclick="IncidentLogManager.resolveAlert(${alertObj.id}, event)">XONG</button>
+        `;
+
+        li.onclick = (e) => {
+            document.querySelectorAll('.incident-row').forEach(el => el.classList.remove('active'));
+            li.classList.add('active');
+            VideoController.seekVideo(alertObj.timestamp_sec);
+            sendCommand({ command: "seek", timestamp: alertObj.timestamp_sec });
+            UIController.showToast(`Đang trích xuất dữ liệu camera tại thời điểm sự cố`);
+        };
+
+        listEl.insertAdjacentElement('afterbegin', li);
+        updateCountUI();
+    }
+
+    function clearLog() {
+        if (confirm("Chức năng này đã bị khóa ở Database để đảm bảo an toàn truy xuất. Bạn cần nhấn XONG từng dòng.")) {
+            return;
+        }
+    }
+
+    function exportCsv() {
+        if (logData.length === 0) { alert("No data to export."); return; }
+        let csv = `data:text/csv;charset=utf-8,ID,Timestamp,Time,Type,Description\n`;
+        logData.forEach(row => {
+            csv += `${row.raw.id},${row.raw.timestamp_sec},${formatHudTime(row.raw.timestamp_sec)},${row.raw.alert_type},"${row.raw.description}"\n`;
+        });
+        const link = document.createElement("a");
+        link.href = encodeURI(csv);
+        link.download = `vdr_maintenance_log_${Date.now()}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    return { fetchUnresolvedAlerts, resolveAlert, handleRealtimeAlert, clearLog, exportCsv };
+})();
+
+// ============================================================
+// MODULE 5: Video Controller
+// ============================================================
+const VideoController = (function() {
+    let player = null;
+    const videoEl     = document.getElementById('videoElement');
+    const placeholder = document.getElementById('videoPlaceholder');
+
+    function init() {
+    const img = document.createElement('img');
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;position:absolute;inset:0;z-index:2;';
+    img.src = CONFIG.STREAM_URL;
+    img.onload  = () => placeholder.classList.add('hidden');
+    img.onerror = () => placeholder.classList.remove('hidden');
+    videoEl.replaceWith(img);
+}
+    function seekVideo(unixTimestamp) {
+        if (player) console.log("Seeking video to unix:", unixTimestamp);
+    }
+
+    return { init, seekVideo };
+})();
+
+// ============================================================
+// MODULE 6: UI Controller
+// ============================================================
+const UIController = (function() {
+
+    function init() {
+        document.getElementById('infoWsUrl').textContent = CONFIG.WS_URL.replace('ws://', '');
+
+        document.getElementById('btnConnect').addEventListener('click', () => {
+            connectWebSocket(); // Simulator được xử lý trực tiếp trên Backend, luôn chạy logic connect
+        });
+
+        document.getElementById('btnDisconnect').addEventListener('click', () => {
+            disconnectWebSocket();
+        });
+
+        document.getElementById('toggleMode').addEventListener('change', (e) => {
+            const isSim = e.target.checked;
+            document.getElementById('modeLabel').textContent = isSim ? 'SIM' : 'LIVE';
+            document.getElementById('infoMode').textContent  = isSim ? 'SIM' : 'LIVE';
+            document.getElementById('infoMode').className = 'sys-info-val ' + (isSim ? 'amber' : 'green');
+            state.mode = isSim ? 'simulation' : 'live';
+
+            if (isSim) {
+                document.getElementById('simBadge').classList.remove('hidden');
+                sendCommand({ command: "set_mode", value: "simulation" });
+            } else {
+                document.getElementById('simBadge').classList.add('hidden');
+                sendCommand({ command: "set_mode", value: "live" });
+            }
+        });
+
+        const hzSlider = document.getElementById('hzSlider');
+        const hzInput  = document.getElementById('hzInput');
+
+        function updateHzValue(val) {
+            let hz = parseFloat(val);
+            if (isNaN(hz) || hz < 0.05) hz = 0.05;
+            if (hz > 5) hz = 5;
+            hzSlider.value = hz;
+            hzInput.value = hz;
+            state.hz = hz;
+            document.getElementById('infoHz').textContent = hz + ' Hz';
+
+            if (state.isConnected || state.mode === 'simulation') {
+                document.getElementById('wsStatusText').textContent = `CONNECTED — ${hz}Hz`;
+            }
+
+            sendCommand({ command: "set_hz", value: hz });
+        }
+
+        hzSlider.addEventListener('input', (e) => updateHzValue(e.target.value));
+        hzInput.addEventListener('blur',    (e) => updateHzValue(e.target.value));
+        hzInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') updateHzValue(e.target.value); });
+
+        document.getElementById('btnClear').addEventListener('click',  IncidentLogManager.clearLog);
+        document.getElementById('btnExport').addEventListener('click', IncidentLogManager.exportCsv);
+    }
+
+    function setConnectionStatus(status) {
+        const textEl = document.getElementById('wsStatusText');
+        const ledEl  = document.getElementById('wsStatusLed');
+        ledEl.className = 'status-led';
+
+        if (status === 'connected') {
+            textEl.textContent = `CONNECTED — ${state.hz}Hz`;
+            ledEl.classList.add('led-online');
+        } else if (status === 'disconnected') {
+            textEl.textContent = 'DISCONNECTED';
+            ledEl.classList.add('led-offline');
+        } else if (status === 'connecting') {
+            textEl.textContent = 'CONNECTING...';
+            ledEl.classList.add('led-connecting', 'pulse');
+        }
+    }
+
+    function showDisconnectOverlay(attemptCount) {
+        const overlay = document.getElementById('disconnectOverlay');
+        const text    = document.getElementById('reconnectText');
+        text.textContent = attemptCount === 'max'
+            ? 'CONNECTION LOST — Manual reconnect required'
+            : `CONNECTION LOST — Retry ${attemptCount}/${CONFIG.MAX_RECONNECT_ATTEMPTS}`;
+        overlay.classList.remove('hidden');
+    }
+
+    function hideDisconnectOverlay() {
+        document.getElementById('disconnectOverlay').classList.add('hidden');
+    }
+
+    function showToast(message) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            ${message}`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add('hide');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+
+    return { init, setConnectionStatus, showDisconnectOverlay, hideDisconnectOverlay, showToast };
+})();
+
+// ============================================================
+// BOOTSTRAP
+// ============================================================
+
+// ============================================================
+// MODULE 7: Maintenance History
+// ============================================================
+const MaintHistoryManager = (function() {
+    const overlay  = () => document.getElementById('maintHistoryOverlay');
+    const listEl   = () => document.getElementById('maintHistoryList');
+    const emptyEl  = () => document.getElementById('maintHistoryEmpty');
+
+    function open() {
+        overlay().classList.remove('hidden');
+        fetch(`${CONFIG.API_URL}/maintenance/history`)
+            .then(r => r.json())
+            .then(res => render(res.data || []))
+            .catch(() => render([]));
+    }
+
+    function close() {
+        overlay().classList.add('hidden');
+    }
+
+    function render(rows) {
+        const list  = listEl();
+        const empty = emptyEl();
+        list.innerHTML = '';
+        if (!rows.length) {
+            empty.classList.remove('hidden');
+            return;
+        }
+        empty.classList.add('hidden');
+        rows.forEach(row => {
+            const date = new Date(row.timestamp_sec * 1000);
+            const dateStr = date.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' });
+            const li = document.createElement('li');
+            li.className = 'maint-history-row';
+            // Task5d: hien note neu co
+            const noteHtml = row.note ? `<div class="maint-history-note">📝 ${row.note}</div>` : '';
+            li.innerHTML = `
+                <span class="maint-history-item">${row.item.replace(/_/g,' ')}</span>
+                <div class="maint-history-meta">
+                    <span class="maint-history-km">${Math.round(row.km_at_service).toLocaleString()} km</span>
+                    <span class="maint-history-date">${dateStr}</span>
+                </div>
+                ${noteHtml}`;
+            list.appendChild(li);
+        });
+    }
+
+    function init() {
+        document.getElementById('btnMaintHistory').addEventListener('click', open);
+        document.getElementById('btnCloseMaintHistory').addEventListener('click', close);
+        overlay().addEventListener('click', (e) => {
+            if (e.target === overlay()) close();
+        });
+    }
+
+    return { init };
+})();
+
+
+// ============================================================
+// Task2e: DTC Scanner
+// ============================================================
+const DTCScanner = (function() {
+    const listEl = () => document.getElementById('dtcList');
+    const btn = () => document.getElementById('btnDtcScan');
+
+    // P=vang, C=xanh, B=cam, U=do
+    function badgeClass(code) {
+        const t = (code || '')[0];
+        return t === 'P' ? 'dtc-p' : t === 'C' ? 'dtc-c' : t === 'B' ? 'dtc-b' : t === 'U' ? 'dtc-u' : 'dtc-p';
+    }
+
+    function renderList(items, emptyMsg) {
+        const el = listEl();
+        if (!el) return;
+        el.innerHTML = '';
+        if (!items.length) {
+            el.innerHTML = `<li class="dtc-empty">${emptyMsg || '✅ Không có mã lỗi'}</li>`;
+            return;
+        }
+        items.forEach(it => {
+            const li = document.createElement('li');
+            li.className = 'dtc-row';
+            const cleared = it.is_cleared ? ' dtc-cleared' : '';
+            const btnHtml = it.id && !it.is_cleared
+                ? `<button class="btn btn-ghost dtc-clear-btn" data-id="${it.id}">Đã xử lý</button>` : '';
+            li.innerHTML = `
+                <div class="dtc-info${cleared}">
+                    <span class="dtc-badge ${badgeClass(it.code || it.dtc_code)}">${it.code || it.dtc_code}</span>
+                    <span class="dtc-desc">${it.description}</span>
+                </div>
+                ${btnHtml}`;
+            const b = li.querySelector('.dtc-clear-btn');
+            if (b) b.addEventListener('click', () => clearDtc(b.dataset.id));
+            el.appendChild(li);
+        });
+    }
+
+    async function scan() {
+        const b = btn();
+        if (b) { b.disabled = true; b.textContent = '⏳ Đang quét...'; }
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/dtc/scan`, { method: 'POST' });
+            const j = await res.json();
+            renderList(j.data || [], '✅ Không tìm thấy mã lỗi nào');
+            UIController.showToast(`🔍 Quét xong: ${j.count || 0} mã lỗi`);
+        } catch (e) {
+            UIController.showToast('❌ Quét thất bại');
+        } finally {
+            if (b) { b.disabled = false; b.textContent = '🔍 Quét Mã Lỗi'; }
+        }
+    }
+
+    async function clearDtc(id) {
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/dtc/${id}/clear`, { method: 'PUT' });
+            if (res.ok) { UIController.showToast('✅ Đã đánh dấu xử lý'); fetchHistory(); }
+        } catch (e) { UIController.showToast('❌ Lỗi'); }
+    }
+
+    async function fetchHistory() {
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/dtc/history`);
+            const j = await res.json();
+            // chi hien ma chua xu ly len dau
+            renderList(j.data || [], '✅ Chưa có mã lỗi');
+        } catch (e) { /* im lang */ }
+    }
+
+    function init() {
+        const b = btn();
+        if (b) b.addEventListener('click', scan);
+        fetchHistory();
+    }
+
+    return { init, scan };
+})();
+
+// ============================================================
+// Task3f: Predictive Maintenance
+// ============================================================
+const PredictionManager = (function() {
+    const listEl = () => document.getElementById('predList');
+
+    async function fetchPrediction() {
+        const el = listEl();
+        if (!el) return;
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/maintenance/prediction`);
+            const j = await res.json();
+            const items = j.data || [];
+            el.innerHTML = '';
+            if (!items.length) {
+                el.innerHTML = '<li class="pred-empty">✅ Chưa phát hiện xu hướng bất thường</li>';
+                return;
+            }
+            items.forEach(it => {
+                const li = document.createElement('li');
+                li.className = 'pred-row pred-' + (it.severity || 'warning');
+                li.innerHTML = `
+                    <span class="pred-icon">🔮</span>
+                    <span class="pred-text">${it.description}</span>`;
+                el.appendChild(li);
+            });
+        } catch (e) { /* im lang */ }
+    }
+
+    function init() {
+        fetchPrediction();
+        // Lam moi moi 60s
+        setInterval(fetchPrediction, 60000);
+    }
+    return { init, fetchPrediction };
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+    // ===== Dang nhap Lab =====
+    (function setupLogin() {
+        const overlay = document.getElementById('loginOverlay');
+        const input = document.getElementById('loginPassword');
+        const btn = document.getElementById('btnLogin');
+        const err = document.getElementById('loginError');
+        if (!overlay || !btn) return;
+        const box = overlay.querySelector('.login-box');
+        function fail(msg) {
+            err.classList.remove('hidden');
+            err.textContent = msg;
+            box.classList.remove('shake');
+            void box.offsetWidth;
+            box.classList.add('shake');
+        }
+        async function tryLogin() {
+            const pw = input.value;
+            if (!pw) { fail('Nhập mật khẩu'); return; }
+            btn.classList.add('loading');
+            try {
+                const res = await fetch(`${CONFIG.API_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                });
+                if (res.ok) {
+                    overlay.style.opacity = '0';
+                    overlay.style.transition = 'opacity 0.4s ease';
+                    setTimeout(() => { overlay.style.display = 'none'; }, 400);
+                } else {
+                    btn.classList.remove('loading');
+                    fail('Sai mật khẩu, thử lại');
+                    input.value = '';
+                    input.focus();
+                }
+            } catch (e) {
+                btn.classList.remove('loading');
+                fail('Không kết nối được server');
+            }
+        }
+        btn.addEventListener('click', tryLogin);
+        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') tryLogin(); });
+        input.focus();
+    })();
+
+    // ===== Hieu ung ripple cho nut =====
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn, .btn-icon');
+        if (!btn) return;
+        const circle = document.createElement('span');
+        const rect = btn.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height);
+        circle.className = 'ripple-circle';
+        circle.style.width = circle.style.height = size + 'px';
+        circle.style.left = (e.clientX - rect.left - size/2) + 'px';
+        circle.style.top = (e.clientY - rect.top - size/2) + 'px';
+        btn.appendChild(circle);
+        setTimeout(() => circle.remove(), 600);
+    });
+
+    GaugeRenderer.init();
+    HistoryChartRenderer.init();
+    VideoController.init();
+    UIController.init();
+    MaintenanceManager.init();
+    MaintHistoryManager.init();
+    DTCScanner.init();
+    PredictionManager.init();
+    
+    const tsEl = document.getElementById('hudTimestamp');
+    if (tsEl) {
+        tsEl.style.cursor = 'pointer';
+        tsEl.addEventListener('click', () => {
+            tsEl.style.opacity = tsEl.style.opacity === '0' ? '1' : '0';
+        });
+    }
+
+    document.body.setAttribute('data-tab', 'drive');
+    document.querySelectorAll('.tab-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-item').forEach(x => x.classList.remove('active'));
+            btn.classList.add('active');
+            document.body.setAttribute('data-tab', btn.dataset.tab);
+            window.dispatchEvent(new Event('resize'));
+        });
+    });
+
+    if (document.getElementById('toggleMode').checked) {
+        state.mode = 'simulation';
+        document.getElementById('simBadge').classList.remove('hidden');
+        document.getElementById('modeLabel').textContent = 'SIM';
+    }
+});
+// ============================================================
+// MODULE 7: Maintenance Manager (bảo dưỡng)
+// ============================================================
+const MaintenanceManager = (function() {
+    const LABELS = {
+        oil_and_filter: 'Dầu + lọc dầu',
+        air_filter:     'Lọc gió',
+        spark_plug:     'Bugi',
+        gearbox_oil:    'Dầu hộp số',
+        brake_pad:      'Má phanh',
+    };
+    const listEl = document.getElementById('maintList');
+    const odoEl  = document.getElementById('odoCurrent');
+
+    async function fetchMaintenance() {
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/maintenance`);
+            const json = await res.json();
+            if (json.status !== 'success') return;
+            if (odoEl) odoEl.textContent = Math.round(json.current_odo).toLocaleString();
+            render(json.data || []);
+        } catch (e) { console.warn('Lỗi tải bảo dưỡng:', e); }
+    }
+
+    function render(items) {
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        items.forEach(it => {
+            // Task5a: render chi tiet km / gio may / ngay con lai + bar mau
+            const name = LABELS[it.item] || it.item;
+            const pct = Math.min(100, Math.round(it.ratio));
+            const sev = it.severity || "ok";
+            const sevLabel = sev === "critical" ? "🔴 CRITICAL" : sev === "warning" ? "🟡 SẮP HẠN" : "🟢 OK";
+            const fmt = (n) => Number(n).toLocaleString("vi-VN");
+            // Dong so lieu: km | gio may (neu co) | ngay con lai
+            const stats = [];
+            stats.push(`${fmt(Math.round(it.km_used))} / ${fmt(it.interval_km)} km`);
+            if (it.interval_engine_hours) {
+                stats.push(`${fmt(Math.round(it.engine_hours_used))} / ${fmt(it.interval_engine_hours)} giờ máy`);
+            }
+            if (it.days_left !== null && it.days_left !== undefined) {
+                stats.push(it.days_left >= 0 ? `còn ~${fmt(it.days_left)} ngày` : `quá ${fmt(-it.days_left)} ngày`);
+            }
+            const li = document.createElement("li");
+            li.className = "maint-row";
+            li.innerHTML = `
+                <div class="maint-info">
+                    <div class="maint-name">
+                        <span class="maint-sev maint-sev-${sev}">${sevLabel}</span>
+                        <span class="maint-title">${name}</span>
+                        <span class="maint-pct">${it.ratio}%</span>
+                    </div>
+                    <div class="maint-stats">${stats.join("  |  ")}</div>
+                    <div class="maint-bar"><div class="maint-bar-fill ${sev}" style="width:${pct}%"></div></div>
+                </div>
+                <button class="btn btn-ghost maint-done-btn" data-item="${it.item}">✓ Đã bảo dưỡng</button>`;
+            li.querySelector('button').addEventListener('click', () => markDone(it.item));
+            listEl.appendChild(li);
+        });
+    }
+
+    async function markDone(item) {
+        // Task5b-js: hoi note (tuy chon) truoc khi danh dau xong
+        const note = prompt(`Ghi chú (tuỳ chọn) cho "${LABELS[item] || item}":\nVD: Thay Castrol 5W-30 tại Midas Cầu Giấy`, "");
+        if (note === null) return;  // bam Cancel -> huy
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/maintenance/${item}/done`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note })
+            });
+            if (res.ok) {
+                UIController.showToast(`✅ Đã ghi nhận bảo dưỡng: ${LABELS[item] || item}`);
+                fetchMaintenance();
+            }
+        } catch (e) { console.error('Lỗi đánh dấu bảo dưỡng:', e); }
+    }
+
+    async function saveOdo() {
+        const input = document.getElementById('odoInput');
+        const km = parseFloat(input.value);
+        if (isNaN(km) || km < 0) { UIController.showToast('⚠️ Nhập số km hợp lệ'); return; }
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/maintenance/odometer`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ km })
+            });
+            if (res.ok) {
+                input.value = '';
+                UIController.showToast(`✅ Đã cập nhật ODO: ${km.toLocaleString()} km`);
+                fetchMaintenance();
+            }
+        } catch (e) { console.error('Lỗi lưu ODO:', e); }
+    }
+
+    function init() {
+        const btn = document.getElementById('btnSaveOdo');
+        if (btn) btn.addEventListener('click', saveOdo);
+        fetchMaintenance();
+        setInterval(fetchMaintenance, 15000); // tự refresh mỗi 15s
+    }
+
+    return { init, fetchMaintenance };
+})();

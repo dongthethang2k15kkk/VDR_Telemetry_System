@@ -16,4 +16,8 @@ logs/
 *.avi
 *.mkv
 
-.vscode/
+firebase_key.json
+_backups/
+google-services.json
+*.zip
+calibration_*.txt

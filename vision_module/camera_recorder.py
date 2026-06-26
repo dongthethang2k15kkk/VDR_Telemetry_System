@@ -20,6 +20,10 @@ class CameraRecorder:
         signal.signal(signal.SIGINT, self._handle_shutdown)
 
     def _handle_shutdown(self, signum, frame):
+        if getattr(self, '_is_shutting_down', False):
+            return
+        self._is_shutting_down = True
+
         print("\n📷 Nhận tín hiệu tắt máy. Đang đóng gói file .ts cuối cùng...")
         self.running = False
         self.stop()
@@ -50,6 +54,7 @@ class CameraRecorder:
                 # Chạy nền FFmpeg, ẩn log rác để không làm trôi log của CAN Bus
                 self.process = subprocess.Popen(
                     command,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
@@ -72,7 +77,11 @@ class CameraRecorder:
     def stop(self):
         if self.process and self.process.poll() is None:
             self.process.terminate()
-            self.process.wait()
+            try:
+                self.process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
             print("✅ Đã ngắt luồng RTSP an toàn.")
 
 def run_camera_recorder():

@@ -29,7 +29,7 @@ class DiskRotation(threading.Thread):
         files.sort(key=os.path.getmtime)
 
         for file in files:
-            if self.get_disk_usage() <= self.threshold - 5:
+            if self.get_disk_usage() <= self.threshold - 5:         ####
                 break
             try:
                 os.remove(file)
@@ -44,7 +44,10 @@ class DiskRotation(threading.Thread):
             
             print("🗄️ Đang kết nối Database để dọn dẹp...")
             cleaner_db = TelemetryDBWriter()
-            cleaner_db.purge_and_vacuum(self.retention_days)
+            try:
+                cleaner_db.purge_and_vacuum(self.retention_days)
+            finally:
+                cleaner_db.close()  # Fix#6: dong connection tranh ro ri
             
         except Exception as e:
             print(f"⚠️ Lỗi khi dọn dẹp DB: {e}")

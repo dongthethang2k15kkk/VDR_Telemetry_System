@@ -1,0 +1,8 @@
+# === WEB UI (serve tinh static, cong 8888) ===
+FROM python:3.11-slim
+WORKDIR /app
+COPY web_ui/ ./web_ui/
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8888
+# Serve thu muc web_ui bang http.server (nhe, du cho static)
+CMD ["python", "-m", "http.server", "8888", "--directory", "web_ui"]

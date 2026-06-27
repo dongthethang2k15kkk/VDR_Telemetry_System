@@ -81,7 +81,9 @@ class OBDReader:
                 can_filters=[{"can_id": 0x7E8, "can_mask": 0x7F8}]
             )
         except Exception as e:
-            print(f"⚠️  [OBD INIT LỖI]: Không thể mở cổng CAN ({e})")
+            if not getattr(self, "_init_err_warned", False):
+                print(f"⚠️  [OBD INIT LỖI]: Không thể mở cổng CAN ({e})")
+                self._init_err_warned = True
             return None
 
     def _handle_shutdown(self, signum, frame):
@@ -435,12 +437,15 @@ class OBDReader:
             try:
                 # Tự kết nối lại nếu mất phần cứng
                 if self.bus is None:
-                    print("⏳ [OBD] Đang thử kết nối lại cổng phần cứng CAN...")
+                    if not getattr(self, "_reconnect_warned", False):
+                        print("⏳ [OBD] Chưa thấy cổng CAN. Sẽ tự kết nối lại khi cắm cáp (im lặng retry mỗi 10s)...")
+                        self._reconnect_warned = True
                     self.bus = self._init_can_bus()
                     if self.bus is None:
-                        time.sleep(3)
+                        time.sleep(10)
                         continue
                     print("✅ [OBD] Đã kết nối lại CAN Bus thành công!")
+                    self._reconnect_warned = False
 
                 cycle_start = time.monotonic()
                 cycle_ts = time.time()

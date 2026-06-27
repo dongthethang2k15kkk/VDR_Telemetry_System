@@ -21,3 +21,5 @@ _backups/
 google-services.json
 *.zip
 calibration_*.txt
+*.bak*
+deploy/*.bak*

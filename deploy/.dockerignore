@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.bak*
+_backups/
+data/cam_*.ts
+data/evidence_*/
+data/*.mp4
+data/*.db
+*.zip
+firebase_key.json
+deploy/
+.git/
+.venv/

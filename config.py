@@ -5,10 +5,13 @@ from typing import Final
 OPERATION_MODE: Final[str] = "PRODUCTION" # Đổi thành "PRODUCTION/SIMULATION" khi chạy thực tế hoặc giả lập
 TIME_SOURCE: Final[str] = "INTERNET"   #  " INTERNET/RTC "
 
+import os as _os
 BASE_DIR = Path(__file__).resolve().parent
-STORAGE_DIR = BASE_DIR / "data"
-STORAGE_DIR.mkdir(exist_ok=True)
-DATABASE_PATH = STORAGE_DIR / "telemetry_v1.db"
+# STORAGE_DIR: uu tien bien moi truong (cho Docker tren server), fallback duong cu (Pi)
+STORAGE_DIR = Path(_os.environ.get("VDR_STORAGE_DIR", str(BASE_DIR / "data")))
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+# DATABASE_PATH: uu tien env DATABASE_PATH (Docker compose set /data/...), fallback STORAGE_DIR
+DATABASE_PATH = Path(_os.environ.get("DATABASE_PATH", str(STORAGE_DIR / "telemetry_v1.db")))
 
 # Cấu hình CAN
 CAN_INTERFACE: Final[str] = "test_channel" if OPERATION_MODE == "SIMULATION" else "/dev/ttyACM0"
@@ -47,6 +50,12 @@ else:
 # Đường dẫn file video xuất ra sau khi Render xong
 OUTPUT_VIDEO_PATH: Final[str] = str(STORAGE_DIR / "crash_evidence.ts")
 
+# ===== OVERLAY ENGINE (video bang chung) =====
+CAMERA_LATENCY_SEC: Final[float] = 0.2   # Tre camera (frame chup luc T, ghi file luc T+tre). Do lai khi doi camera.
+EVIDENCE_PRE_SEC: Final[int] = 15        # Giay TRUOC moc va cham
+EVIDENCE_POST_SEC: Final[int] = 15       # Giay SAU moc va cham
+
+
 # Đường dẫn Font chữ (Tự động đổi theo môi trường Windows/Linux)
 if OPERATION_MODE == "SIMULATION":
     FONT_PATH: Final[str] = "assets/arialbd.ttf"
@@ -62,6 +71,24 @@ THRESHOLD_LTFT_CRITICAL: Final[float] = 25.0      # % (Tuyệt đối: > 25 ho�
 BEHAVIOR_SPEED_MAX: Final[float] = 120.0          # km/h
 BEHAVIOR_THROTTLE_MAX: Final[float] = 90.0        # %
 BEHAVIOR_THROTTLE_DURATION: Final[int] = 5        # Giây liên tục
+
+# ===== PHAT HIEN TAI NAN (Crash Detection) =====
+CRASH_DETECTION_ENABLED: Final[bool] = True   # Bat/tat toan bo phat hien tai nan
+# --- MPU-6050 (accelerometer + gyroscope), tu dong do; khong co thi chi dung OBD ---
+CRASH_MPU_I2C_BUS: Final[int] = 5             # /dev/i2c-5 (doi neu MPU noi bus khac)
+CRASH_MPU_I2C_ADDR: Final[int] = 0x68         # Dia chi mac dinh MPU-6050 (0x69 neu chan AD0=High)
+CRASH_SAMPLE_RATE_HZ: Final[int] = 50         # Tan so doc MPU (va cham ~100ms -> can >=50Hz)
+# --- Nguong G-force (don vi: g; 1g = trong luc binh thuong) ---
+CRASH_GFORCE_THRESHOLD: Final[float] = 4.0    # Tong gia toc > 4g -> nghi va cham (nhe ~5g, vua 20g, nang 40g)
+CRASH_GFORCE_SEVERE: Final[float] = 20.0      # > 20g -> tai nan nang
+# --- Nguong lat xe (goc nghieng tu gyro/accel, do) ---
+CRASH_TILT_THRESHOLD: Final[float] = 60.0     # Goc nghieng > 60 do -> nghi lat xe
+# --- Xac nhan cheo bang OBD: toc do sut dot ngot ---
+CRASH_SPEED_DROP_KMH: Final[float] = 40.0     # Sut > 40 km/h
+CRASH_SPEED_DROP_WINDOW_SEC: Final[float] = 1.5  # Trong vong 1.5 giay -> nghi va cham
+# --- Chong bao trung ---
+CRASH_COOLDOWN_SEC: Final[int] = 30           # Sau 1 lan phat hien, cho 30s moi bao tiep
+
 
 # Nhóm B - Bảo dưỡng định kỳ
 MAINTENANCE_SCHEDULE = {

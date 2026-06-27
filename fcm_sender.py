@@ -34,7 +34,7 @@ def _get_access_token():
                 _credentials.refresh(google.auth.transport.requests.Request())
             return _credentials.token
     except Exception as e:
-        print(f"⚠️  [FCM] Loi lay access token: {e}")
+        print(f"⚠️  [FCM] Lỗi lấy access token: {e}")
         return None
 
 
@@ -70,7 +70,7 @@ def _send_one(token: str, title: str, body: str, data: dict = None):
         )
         return resp.ok, resp.status_code
     except Exception as e:
-        print(f"⚠️  [FCM] Loi gui push: {e}")
+        print(f"⚠️  [FCM] Lỗi gửi push: {e}")
         return False, 0
 
 
@@ -105,7 +105,7 @@ def send_push_async(tokens, title: str, body: str, data: dict = None, on_invalid
             try:
                 on_invalid(invalid)
             except Exception as e:
-                print(f"⚠️  [FCM] Loi callback on_invalid: {e}")
+                print(f"⚠️  [FCM] Lỗi callback on_invalid: {e}")
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -119,5 +119,5 @@ if __name__ == "__main__":
     tk = sys.argv[1]
     print("Gui test push...")
     inv = send_push(tk, "BK-AutoBlackBox", "Test thong bao day thanh cong! 🚗")
-    print("Invalid tokens:", inv if inv else "(khong co)")
-    print("Xong. Kiem tra dien thoai.")
+    print("Token không hợp lệ:", inv if inv else "(không có)")
+    print("Xong. Kiểm tra điện thoại.")

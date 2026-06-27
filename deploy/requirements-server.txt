@@ -1,0 +1,8 @@
+# Thu vien cho SERVER (web + api + render). KHONG gom python-can (do la phan Pi doc CAN).
+fastapi==0.115.0
+uvicorn==0.32.0
+numpy==2.4.4
+opencv-python-headless==4.13.0.92
+pandas==3.0.2
+pillow==12.2.0
+python-dateutil==2.9.0.post0

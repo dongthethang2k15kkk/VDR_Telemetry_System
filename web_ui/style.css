@@ -310,8 +310,10 @@ input:checked + .slider::before { transform:translateX(18px); }
     body[data-tab="drive"] .zone-1 { display:flex; height:38vh; }
     body[data-tab="drive"] .zone-2 { display:flex; height:calc(62vh - 60px); }
     body[data-tab="maint"] .zone-3 { display:flex; }
-    body[data-tab="diag"]  .zone-4 { display:flex; }
-    body[data-tab="diag"]  .zone-5 { display:flex; margin-top:8px; }
+    body[data-tab="diag"]  .zone-4 { display:flex; height:auto; max-height:none; flex:0 0 auto; }
+    body[data-tab="diag"]  .zone-5 { display:flex; margin-top:8px; height:auto; max-height:none; flex:1 1 auto; min-height:200px; }
+    body[data-tab="diag"]  .dashboard-grid { overflow-y:auto; }
+    body[data-tab="diag"]  { overflow:auto; }
     body[data-tab="ctrl"]  .zone-6 { display:flex; height:auto; }
     body[data-tab="ctrl"]  .zone-6 .ctrl-strip { flex-direction:column; align-items:stretch; }
     body[data-tab="ctrl"]  .ctrl-divider { display:none; }
@@ -444,3 +446,82 @@ input:checked + .slider::before { transform:translateX(18px); }
 
 .login-title { font-size:14px; font-weight:600; color:var(--text-1); line-height:1.4; margin-top:2px; }
 .login-sub { margin-top:0; }
+
+
+/* ===== CRASH: card tai nan + modal bang chung ===== */
+.crash-row {
+    background: rgba(255,59,59,0.06);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 8px 10px; flex-wrap: nowrap;
+}
+.crash-main { flex: 1 1 auto; min-width: 0; }
+.crash-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.crash-sev { font-weight: 700; font-size: 0.8rem; white-space: nowrap; }
+.crash-time { font-size: 0.72rem; color: #999; white-space: nowrap; }
+.crash-meta {
+    font-size: 0.74rem; color: #c8c8c8; margin-top: 3px;
+    white-space: normal; line-height: 1.5;
+}
+.crash-meta b { color: #fff; font-weight: 600; }
+.btn-evidence {
+    flex: 0 0 auto;
+    background: #ff3b3b; color: #fff; border: none; border-radius: 6px;
+    padding: 6px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer;
+    white-space: nowrap; transition: filter .15s;
+}
+.btn-evidence:hover { filter: brightness(1.15); }
+.evidence-pending {
+    flex: 0 0 auto; font-size: 0.72rem; color: #ffcc00; white-space: nowrap;
+}
+
+.crash-modal {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.78); display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+}
+.crash-modal.hidden { display: none; }
+.crash-modal-box {
+    background: #1a1d24; border: 1px solid #333; border-radius: 14px;
+    width: min(720px, 92vw); max-height: 90vh; overflow-y: auto; padding: 18px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.crash-modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.crash-modal-title { font-weight: 700; font-size: 1rem; color: #ff5b5b; }
+.crash-modal-close {
+    background: none; border: none; color: #aaa; font-size: 1.8rem; line-height: 1;
+    cursor: pointer; padding: 0 6px;
+}
+.crash-modal-close:hover { color: #fff; }
+.crash-modal-video { width: 100%; border-radius: 10px; background: #000; max-height: 50vh; }
+.crash-modal-info {
+    margin: 12px 0; padding: 10px 12px; background: rgba(255,255,255,0.04);
+    border-radius: 8px; font-size: 0.84rem; color: #ddd;
+}
+.crash-modal-info b { color: #fff; }
+.crash-modal-chart-label { font-size: 0.78rem; color: #999; margin: 6px 0; }
+.crash-modal-chart { width: 100%; height: 220px; }
+
+
+/* ===== TAKEOVER: canh bao tai nan che vung du lieu xe ===== */
+.crash-takeover {
+    position: absolute; inset: 0; z-index: 500;
+    background: linear-gradient(135deg, #2a0808, #4a0c0c);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: inherit;
+}
+.crash-takeover.hidden { display: none; }
+.takeover-inner { text-align: center; padding: 24px; max-width: 90%; }
+.takeover-pulse { font-size: 4rem; animation: takeoverPulse 1.1s ease-in-out infinite; }
+@keyframes takeoverPulse { 0%,100%{ transform: scale(1); opacity:1; } 50%{ transform: scale(1.15); opacity:.7; } }
+.takeover-title { font-size: 1.6rem; font-weight: 800; color: #fff; letter-spacing: 2px; margin-top: 8px; }
+.takeover-sev { font-size: 1rem; font-weight: 700; color: #ffd0d0; margin-top: 4px; letter-spacing: 1px; }
+.takeover-meta { font-size: 0.9rem; color: #ffeaea; margin-top: 14px; line-height: 1.7; }
+.takeover-meta b { color: #fff; }
+.takeover-actions { display: flex; gap: 10px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
+.takeover-btn-video, .takeover-btn-ack {
+    border: none; border-radius: 8px; padding: 11px 18px; font-size: 0.86rem;
+    font-weight: 700; cursor: pointer; transition: filter .15s;
+}
+.takeover-btn-video { background: #fff; color: #c00; }
+.takeover-btn-ack { background: rgba(255,255,255,0.18); color: #fff; border: 1px solid rgba(255,255,255,0.4); }
+.takeover-btn-video:hover, .takeover-btn-ack:hover { filter: brightness(1.1); }

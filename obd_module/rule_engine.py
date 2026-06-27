@@ -592,7 +592,7 @@ class RuleEngine(threading.Thread):
                     on_invalid=remove_device_tokens
                 )
         except Exception as e:
-            print(f"[FCM] Loi day push: {e}")
+            print(f"[FCM] Lỗi đẩy push: {e}")
 
     def _refresh_from_db(self):
         """Đọc giá trị PID mới nhất từ obd_data (do OBDReader ghi) → nạp current_data."""

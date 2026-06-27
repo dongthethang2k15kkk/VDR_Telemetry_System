@@ -155,6 +155,112 @@ def _gen_frames():
         yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
                + jpg.tobytes() + b'\r\n')
 
+# ==========================================
+# KHOI CRASH: Lich su tai nan + video bang chung
+# ==========================================
+@app.get("/api/crash-events")
+def get_crash_events():
+    """Danh sach su co tai nan (moi nhat truoc)."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, timestamp_sec, severity, gforce, tilt, speed_before, source, evidence_path, acknowledged "
+            "FROM crash_events ORDER BY timestamp_sec DESC LIMIT 100"
+        ).fetchall()
+        out = []
+        for r in rows:
+            ev = r["evidence_path"] or ""
+            is_pending = ev.startswith("PENDING")
+            fname = "" if is_pending else (ev.split("/")[-1] if ev else "")
+            out.append({
+                "id": r["id"],
+                "timestamp": r["timestamp_sec"],
+                "severity": r["severity"],
+                "gforce": round(r["gforce"] or 0, 1),
+                "tilt": round(r["tilt"] or 0, 0),
+                "speed_before": round(r["speed_before"] or 0, 0),
+                "source": r["source"],
+                "evidence": fname,
+                "has_video": bool(fname),
+                "pending": is_pending,
+                "acknowledged": bool(r["acknowledged"]),
+            })
+        return {"events": out, "count": len(out)}
+    except Exception as e:
+        return {"events": [], "count": 0, "error": str(e)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/crash-events/{event_id}/obd")
+def get_crash_obd(event_id: int):
+    """OBD timeline quanh thoi diem va cham (15s truoc -> 15s sau)."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT timestamp_sec FROM crash_events WHERE id=?", (event_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Khong tim thay su co")
+        t = row["timestamp_sec"]
+        data = conn.execute(
+            "SELECT timestamp_sec, pid_name, value FROM obd_data "
+            "WHERE timestamp_sec BETWEEN ? AND ? ORDER BY timestamp_sec ASC",
+            (t - 15, t + 15)
+        ).fetchall()
+        return {"crash_time": t, "data": [dict(d) for d in data]}
+    finally:
+        conn.close()
+
+
+@app.get("/api/evidence/{filename}")
+def get_evidence_video(filename: str):
+    """Serve file video bang chung (chong path traversal)."""
+    import os
+    from fastapi.responses import FileResponse
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Ten file khong hop le")
+    from config import STORAGE_DIR
+    path = os.path.join(str(STORAGE_DIR), filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Khong co video")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@app.get("/api/crash-events/active")
+def get_active_crash():
+    """Su co NANG/VUA chua xem (acknowledged=0), moi nhat. De hien canh bao takeover."""
+    conn = get_db()
+    try:
+        r = conn.execute(
+            "SELECT id, timestamp_sec, severity, gforce, tilt, speed_before, evidence_path "
+            "FROM crash_events WHERE acknowledged=0 AND severity IN ('NANG','VUA') "
+            "ORDER BY timestamp_sec DESC LIMIT 1"
+        ).fetchone()
+        if not r:
+            return {"active": False}
+        ev = r["evidence_path"] or ""
+        return {
+            "active": True,
+            "id": r["id"], "timestamp": r["timestamp_sec"], "severity": r["severity"],
+            "gforce": round(r["gforce"] or 0, 1), "tilt": round(r["tilt"] or 0, 0),
+            "speed_before": round(r["speed_before"] or 0, 0),
+            "evidence": ev.split("/")[-1] if ev else "", "has_video": bool(ev),
+        }
+    finally:
+        conn.close()
+
+
+@app.put("/api/crash-events/{event_id}/ack")
+def ack_crash(event_id: int):
+    """Danh dau da xem (tat takeover cho su co nay)."""
+    conn = get_db()
+    try:
+        conn.execute("UPDATE crash_events SET acknowledged=1 WHERE id=?", (event_id,))
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
 @app.get("/stream/camera")
 def camera_stream():
     return StreamingResponse(
@@ -223,6 +329,25 @@ def get_maintenance():
             days_left = round(r["interval_days"] - days_used) if r["interval_days"] else None
             engine_hours_left = round(interval_eh - engine_hours_used, 1) if interval_eh else None
             severity = "critical" if ratio >= 100 else "warning" if ratio >= 90 else "ok"
+            # Xac dinh moc QUYET DINH (cai co ratio cao nhat) de hien thi nhat quan voi severity
+            driver = "km"
+            if days_ratio >= km_ratio and days_ratio >= engine_hours_ratio:
+                driver = "days"
+            elif engine_hours_ratio >= km_ratio and engine_hours_ratio >= days_ratio:
+                driver = "engine_hours"
+            # Mo ta tinh trang theo moc quyet dinh (am = qua han)
+            if driver == "km":
+                overdue = km_used - (r["interval_km"] or 0)
+                status_text = (f"Quá hạn {abs(round(overdue))} km" if overdue >= 0
+                               else f"Còn {round(km_left)} km")
+            elif driver == "days":
+                overdue = days_used - (r["interval_days"] or 0)
+                status_text = (f"Quá hạn {abs(round(overdue))} ngày" if overdue >= 0
+                               else f"Còn {round(days_left)} ngày")
+            else:
+                overdue = engine_hours_used - (interval_eh or 0)
+                status_text = (f"Quá hạn {abs(round(overdue))} giờ máy" if overdue >= 0
+                               else f"Còn {round(engine_hours_left)} giờ máy")
             items.append({
                 "item": r["item"],
                 "interval_km": r["interval_km"],
@@ -236,6 +361,8 @@ def get_maintenance():
                 "interval_engine_hours": interval_eh,
                 "ratio": round(ratio, 1),
                 "severity": severity,  # Task1f
+                "driver": driver,
+                "status_text": status_text,
             })
         return {"status": "success", "current_odo": round(current_odo, 1), "data": items}
     finally:

@@ -4,6 +4,19 @@ import signal
 import time
 from config import VIDEO_SOURCE, STORAGE_DIR, OPERATION_MODE
 
+import ctypes
+import signal as _signal
+
+def _set_pdeathsig():
+    """Linux: bao OS giet tien trinh con khi tien trinh cha chet (chong mo coi)."""
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        PR_SET_PDEATHSIG = 1
+        libc.prctl(PR_SET_PDEATHSIG, _signal.SIGKILL)
+    except Exception:
+        pass
+
+
 class CameraRecorder:
     def __init__(self, segment_time=60):
         """
@@ -56,7 +69,8 @@ class CameraRecorder:
                     command,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
+                    preexec_fn=_set_pdeathsig  # cha chet -> ffmpeg tu chet, khong mo coi
                 )
 
                 # Giữ luồng sống và giám sát tiến trình FFmpeg

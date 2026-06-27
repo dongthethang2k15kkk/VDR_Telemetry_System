@@ -1,0 +1,15 @@
+# === API SERVER (FastAPI + uvicorn, cong 8080) ===
+FROM python:3.11-slim
+WORKDIR /app
+# ffmpeg + libs cho opencv (api co dung cv2 cho /stream/camera)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+COPY deploy/requirements-server.txt .
+RUN pip install --no-cache-dir -r requirements-server.txt
+# Copy code (config, api_server, cac module phu)
+COPY config.py api_server.py fcm_sender.py ./
+COPY obd_module/ ./obd_module/
+# DB se nam o volume /data (xem docker-compose)
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8080
+CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8080"]

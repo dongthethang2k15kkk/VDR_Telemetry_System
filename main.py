@@ -52,6 +52,16 @@ def run_web_ui_server():
         print("🌐 Web UI tại http://0.0.0.0:8888")
         httpd.serve_forever()
 
+def run_crash_isolated():
+    """Chay phat hien tai nan trong process rieng (tu do MPU + OBD speed)."""
+    from crash_detector import CrashDetector
+    import time as _t
+    cd = CrashDetector()
+    cd.start()
+    while True:
+        _t.sleep(1)
+
+
 def main():
     # Tu don tan du lan chay truoc: kill process main.py cu (tru chinh no) + port
     import subprocess, os
@@ -130,6 +140,10 @@ def main():
             target=run_production_reader, name="OBD_Process", daemon=True
         )
         obd_process.start()
+        crash_process = multiprocessing.Process(
+            target=run_crash_isolated, name="Crash_Process", daemon=True
+        )
+        crash_process.start()
 
         # Bật luồng API Server FastAPI (Đã cô lập nhóm tiến trình)
         api_process = multiprocessing.Process(

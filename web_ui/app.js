@@ -729,6 +729,188 @@ const PredictionManager = (function() {
     return { init, fetchPrediction };
 })();
 
+// ══════════════════════════════════════════
+// CrashLogManager - Lich su tai nan + video bang chung
+// ══════════════════════════════════════════
+const CrashLogManager = (() => {
+    const SEV_STYLE = {
+        'NANG':     { color: '#ff3b3b', label: 'NẶNG',     icon: '🔴' },
+        'VUA':      { color: '#ff9500', label: 'VỪA',      icon: '🟠' },
+        'NHE':      { color: '#ffcc00', label: 'NHẸ',      icon: '🟡' },
+        'NGHI_NGO': { color: '#8e8e93', label: 'NGHI NGỜ', icon: '⚪' },
+    };
+
+    function fmtTime(ts) {
+        const d = new Date(ts * 1000);
+        const p = n => String(n).padStart(2, '0');
+        return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    async function fetchCrashes() {
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/crash-events`);
+            if (!res.ok) return;
+            const data = await res.json();
+            render(data.events || []);
+        } catch (e) { console.error('Lỗi tải sự cố tai nạn:', e); }
+    }
+
+    function render(events) {
+        const listEl = document.getElementById('incidentList');
+        if (!listEl) return;
+        // Xoa cac card crash cu (giu nguyen alert thuong neu co)
+        listEl.querySelectorAll('.crash-row').forEach(el => el.remove());
+        const emptyEl = document.getElementById('logEmpty');
+        if (events.length > 0 && emptyEl) emptyEl.style.display = 'none';
+
+        events.forEach(ev => {
+            const sev = SEV_STYLE[ev.severity] || SEV_STYLE['NGHI_NGO'];
+            const li = document.createElement('li');
+            li.className = 'incident-row crash-row';
+            li.style.borderLeft = `3px solid ${sev.color}`;
+            li.innerHTML = `
+                <div class="crash-main">
+                    <div class="crash-head">
+                        <span class="crash-sev" style="color:${sev.color}">${sev.icon} TAI NẠN ${sev.label}</span>
+                        <span class="crash-time">${fmtTime(ev.timestamp)}</span>
+                    </div>
+                    <div class="crash-meta">
+                        G-force <b>${ev.gforce}g</b> · Tốc độ trước <b>${ev.speed_before} km/h</b>${ev.tilt > 0 ? ` · Nghiêng <b>${ev.tilt}°</b>` : ''}
+                    </div>
+                </div>
+                ${ev.has_video
+                    ? `<button class="btn-evidence" data-id="${ev.id}" data-file="${ev.evidence}">▶ Bằng chứng</button>`
+                    : `<span class="evidence-pending">⏳ Đang tạo bằng chứng</span>`}
+            `;
+            const btn = li.querySelector('.btn-evidence');
+            if (btn) btn.addEventListener('click', () => CrashModal.open(ev.id, ev.evidence, ev));
+            listEl.prepend(li);  // tai nan len dau
+        });
+    }
+
+    function init() {
+        fetchCrashes();
+        setInterval(fetchCrashes, 15000);
+    }
+    return { init, fetchCrashes };
+})();
+
+// ══════════════════════════════════════════
+// CrashModal - Popup xem video + OBD timeline
+// ══════════════════════════════════════════
+const CrashModal = (() => {
+    function open(id, filename, ev) {
+        const modal = document.getElementById('crashModal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        // Video
+        const video = document.getElementById('crashVideo');
+        video.src = `${CONFIG.API_URL}/evidence/${filename}`;
+        // Thong tin
+        document.getElementById('crashModalInfo').innerHTML =
+            `Mức độ <b>${ev.severity}</b> · G-force <b>${ev.gforce}g</b> · Tốc độ trước <b>${ev.speed_before} km/h</b>`;
+        // OBD timeline
+        loadObd(id);
+    }
+    async function loadObd(id) {
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/crash-events/${id}/obd`);
+            if (!res.ok) return;
+            const data = await res.json();
+            drawObd(data);
+        } catch (e) { console.error('Lỗi tải OBD timeline:', e); }
+    }
+    function drawObd(data) {
+        const el = document.getElementById('crashObdChart');
+        if (!el || typeof Plotly === 'undefined') return;
+        const rows = data.data || [];
+        const t0 = data.crash_time;
+        // gom theo pid_name
+        const series = {};
+        rows.forEach(r => {
+            const name = r.pid_name;
+            if (!series[name]) series[name] = { x: [], y: [] };
+            series[name].x.push(r.timestamp_sec - t0);  // giay tuong doi va cham
+            series[name].y.push(r.value);
+        });
+        const want = ['Vehicle Speed', 'Engine RPM', 'Throttle Position'];
+        const traces = want.filter(n => series[n]).map(n => ({
+            x: series[n].x, y: series[n].y, name: n, mode: 'lines', type: 'scatter'
+        }));
+        Plotly.newPlot(el, traces, {
+            margin: { t: 10, r: 10, b: 30, l: 40 },
+            paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+            font: { color: '#ccc', size: 10 },
+            xaxis: { title: 'Giây (0 = va chạm)' },
+            shapes: [{ type: 'line', x0: 0, x1: 0, y0: 0, y1: 1, yref: 'paper',
+                       line: { color: 'red', width: 2, dash: 'dash' } }],
+            showlegend: true, legend: { orientation: 'h', y: -0.3 }
+        }, { displayModeBar: false, responsive: true });
+    }
+    function close() {
+        const modal = document.getElementById('crashModal');
+        if (modal) modal.classList.add('hidden');
+        const video = document.getElementById('crashVideo');
+        if (video) { video.pause(); video.src = ''; }
+    }
+    function init() {
+        const closeBtn = document.getElementById('crashModalClose');
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        const modal = document.getElementById('crashModal');
+        if (modal) modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    }
+    return { open, close, init };
+})();
+
+// ══════════════════════════════════════════
+// CrashTakeover - Canh bao toan man khi co tai nan nghiem trong chua xem
+// ══════════════════════════════════════════
+const CrashTakeover = (() => {
+    let current = null;
+    const SEV = { 'NANG': 'NANG', 'VUA': 'VUA' };
+    function fmtTime(ts){ const d=new Date(ts*1000); const p=n=>String(n).padStart(2,'0');
+        return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
+    async function check(){
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/crash-events/active`);
+            if(!res.ok) return;
+            const d = await res.json();
+            const el = document.getElementById('crashTakeover');
+            if(!el) return;
+            if(d.active){
+                current = d;
+                document.getElementById('takeoverSev').textContent = 'MỨC ĐỘ ' + (d.severity==='NANG'?'NẶNG':'VỪA');
+                document.getElementById('takeoverMeta').innerHTML =
+                    `${fmtTime(d.timestamp)}<br>G-force <b>${d.gforce}g</b> · Tốc độ trước <b>${d.speed_before} km/h</b>` +
+                    (d.tilt>0?` · Nghiêng <b>${d.tilt}°</b>`:'');
+                const vbtn = document.getElementById('takeoverVideo');
+                vbtn.style.display = d.has_video ? '' : 'none';
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        } catch(e){ console.error('Loi check takeover:', e); }
+    }
+    async function ack(){
+        if(!current) return;
+        try { await fetch(`${CONFIG.API_URL}/crash-events/${current.id}/ack`, { method:'PUT' }); } catch(e){}
+        const el = document.getElementById('crashTakeover');
+        if(el) el.classList.add('hidden');
+        current = null;
+    }
+    function init(){
+        const ackBtn = document.getElementById('takeoverAck');
+        if(ackBtn) ackBtn.addEventListener('click', ack);
+        const vBtn = document.getElementById('takeoverVideo');
+        if(vBtn) vBtn.addEventListener('click', () => {
+            if(current) CrashModal.open(current.id, current.evidence, current);
+        });
+        check();
+        setInterval(check, 15000);
+    }
+    return { init, check };
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     // ===== Dang nhap Lab =====
     (function setupLogin() {
@@ -798,6 +980,9 @@ document.addEventListener('DOMContentLoaded', () => {
     MaintHistoryManager.init();
     DTCScanner.init();
     PredictionManager.init();
+    CrashLogManager.init();
+    CrashModal.init();
+    CrashTakeover.init();
     
     const tsEl = document.getElementById('hudTimestamp');
     if (tsEl) {
@@ -863,7 +1048,10 @@ const MaintenanceManager = (function() {
             if (it.interval_engine_hours) {
                 stats.push(`${fmt(Math.round(it.engine_hours_used))} / ${fmt(it.interval_engine_hours)} giờ máy`);
             }
-            if (it.days_left !== null && it.days_left !== undefined) {
+            // Tinh trang theo MOC QUYET DINH (status_text tu backend) - nhat quan voi severity
+            if (it.status_text) {
+                stats.push(it.status_text);
+            } else if (it.days_left !== null && it.days_left !== undefined) {
                 stats.push(it.days_left >= 0 ? `còn ~${fmt(it.days_left)} ngày` : `quá ${fmt(-it.days_left)} ngày`);
             }
             const li = document.createElement("li");

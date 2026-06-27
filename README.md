@@ -169,19 +169,29 @@ VDR_Telemetry_System/
 
 ## 🚀 Khởi chạy · Getting Started
 
-```bash
-# 1. Cài thư viện
-pip install -r requirements.txt
-
-# 2. (Tùy chọn) Tự kiểm tra & hiệu chỉnh phần cứng
-python auto_calibration.py
-
-# 3. Chạy hệ thống
-python main.py
-
-# 4. Mở dashboard
-#    Web:  http://<IP>:8888
-#    API:  http://<IP>:8080
+```mermaid
+graph TD
+    subgraph PI["ORANGE PI 4 PRO - tren xe"]
+        CAN["CANable Pro 2.0<br/>OBD-II / CAN"]
+        CAM["Camera IP<br/>RTSP"]
+        MPU["MPU-6050<br/>gia toc"]
+        CAN --> CANAPP["can_app<br/>giai ma J1979"]
+        CAM --> REC["camera_recorder<br/>FFmpeg .ts"]
+        MPU --> CRASH["crash_detector<br/>phat hien tai nan"]
+        CANAPP --> DB[("SQLite WAL<br/>+ Storage Manager")]
+        REC --> DB
+        CRASH --> DB
+        DB --> RULE["rule_engine<br/>chan doan"]
+        DB --> API["api_server<br/>FastAPI :8080"]
+        DB --> WEB["web_ui<br/>dashboard :8888"]
+    end
+    API -.->|"giai doan 2: day data len server"| SERVER
+    subgraph SERVER["SERVER - Docker Compose"]
+        SWEB["web"]
+        SAPI["api"]
+        SRENDER["render worker"]
+    end
+    SERVER -.->|"truy cap tu moi noi"| USER["Nguoi dung / App"]
 ```
 
 > 💡 Không có phần cứng? Đổi `OPERATION_MODE = "SIMULATION"` trong `config.py` để chạy giả lập trên laptop.

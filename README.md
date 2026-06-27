@@ -18,9 +18,9 @@
 
 ## 📖 Giới thiệu · Overview
 
-**VN:** VDR (Vehicle Data Recorder) là hệ thống hộp đen ô tô chạy trên máy tính nhúng, đọc dữ liệu động cơ qua chuẩn OBD-II/CAN Bus, đồng bộ với camera hành trình, phát hiện tai nạn và cảnh báo bảo dưỡng dự đoán. Sản phẩm dự thi **Sáng kiến An toàn Giao thông 2026 (ATGT2026)**.
+**VN:** VDR (Vehicle Data Recorder) là hệ thống hộp đen ô tô chạy trên máy tính nhúng, đọc dữ liệu động cơ qua chuẩn OBD-II/CAN Bus, đồng bộ với camera hành trình, phát hiện tai nạn và cảnh báo bảo dưỡng dự đoán.
 
-**EN:** VDR is an embedded automotive black-box system. It reads engine data via OBD-II/CAN Bus, syncs with a dashcam, detects accidents, and provides predictive maintenance alerts. Built for the **Traffic Safety Innovation Contest 2026**.
+**EN:** VDR is an embedded automotive black-box system. It reads engine data via OBD-II/CAN Bus, syncs with a dashcam, detects accidents, and provides predictive maintenance alerts.
 
 > ⚡ **Điểm khác biệt:** Không chỉ quay video như dashcam thường — hệ thống ghi **video + dữ liệu động cơ đồng bộ theo thời gian**, tạo bằng chứng tai nạn có cả tốc độ/vòng tua/chân ga tại thời điểm va chạm.
 

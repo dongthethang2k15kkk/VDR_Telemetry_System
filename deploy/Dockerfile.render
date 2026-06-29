@@ -1,7 +1,12 @@
-# === RENDER WORKER (NAC 1 - khung, chua render that) ===
-# Nac 2 se them cv2/ffmpeg/pandas + overlay_engine.
+# === RENDER WORKER (NAC 2 - render that: overlay HUD len video) ===
 FROM python:3.11-slim
 WORKDIR /app
-COPY render_worker.py ./
+# ffmpeg + lib cho opencv + font (DejaVu)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg libgl1 libglib2.0-0 fonts-dejavu \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir opencv-python-headless numpy pillow pandas
+# render_worker -> render_engine -> overlay_engine -> config (chuoi import)
+COPY render_worker.py render_engine.py overlay_engine.py config.py ./
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "render_worker.py"]

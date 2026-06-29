@@ -17,6 +17,8 @@ import zipfile
 import sqlite3
 import shutil
 
+import render_engine
+
 SERVER_DB    = os.environ.get("SERVER_DB_PATH", "/data/server_history.db")
 EVIDENCE_DIR = os.environ.get("EVIDENCE_DIR", "/data/evidence")
 POLL_SEC     = int(os.environ.get("RENDER_POLL_SEC", "5"))
@@ -80,12 +82,19 @@ def process_one(zip_path):
     obd_ok = "obd.json" in files
     print(f"🔧 [RENDER] {fname}: files={files} video={has_video} obd={obd_ok}")
 
-    # ── NAC 1: tao placeholder thay vi render that ──
-    # NAC 2 se thay block nay bang goi overlay_engine.render_window(...)
+    # ── NAC 2: render that bang render_engine (overlay HUD len video da gop) ──
+    video_in = next((os.path.join(work, x) for x in files if x.endswith((".ts", ".mp4"))), None)
+    obd_in   = os.path.join(work, "obd.json")
     out_name = f"evidence_{device}_{crash_id}.mp4"
     out_path = os.path.join(RENDERED_DIR, out_name)
-    with open(out_path, "wb") as fo:
-        fo.write(b"PLACEHOLDER_RENDERED_VIDEO")
+
+    if not video_in:
+        print(f"⚠️  [RENDER] {fname}: khong co video trong goi, bo qua.")
+        return
+    rendered = render_engine.render(video_in, obd_in, out_path)
+    if not rendered:
+        print(f"⚠️  [RENDER] {fname}: render that bai, giu zip lai de thu lai sau.")
+        return
 
     n = _update_db(crash_id, out_path)
     if n > 0:

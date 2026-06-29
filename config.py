@@ -50,6 +50,17 @@ else:
 # Đường dẫn file video xuất ra sau khi Render xong
 OUTPUT_VIDEO_PATH: Final[str] = str(STORAGE_DIR / "crash_evidence.ts")
 
+# ── MQTT (Pi -> Server, qua WebSocket/WSS) ──────────
+# Local de test; deploy thi set bang bien moi truong.
+MQTT_HOST   = _os.environ.get("MQTT_HOST", "localhost")
+MQTT_PORT   = int(_os.environ.get("MQTT_PORT", "9001"))      # 9001 = listener websockets cua Mosquitto
+MQTT_WS_PATH= _os.environ.get("MQTT_WS_PATH", "/mqtt")
+MQTT_TLS    = _os.environ.get("MQTT_TLS", "0") == "1"        # 1 = wss qua nginx/Cloudflare
+MQTT_TOPIC_PREFIX = _os.environ.get("MQTT_TOPIC_PREFIX", "vdr")
+MQTT_DEVICE_ID    = _os.environ.get("MQTT_DEVICE_ID", "pi-01")
+MQTT_UPLOAD_INTERVAL_SEC = int(_os.environ.get("MQTT_UPLOAD_INTERVAL_SEC", "5"))
+
+
 # ===== OVERLAY ENGINE (video bang chung) =====
 CAMERA_LATENCY_SEC: Final[float] = 0.2   # Tre camera (frame chup luc T, ghi file luc T+tre). Do lai khi doi camera.
 EVIDENCE_PRE_SEC: Final[int] = 15        # Giay TRUOC moc va cham

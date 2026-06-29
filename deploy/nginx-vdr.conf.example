@@ -1,0 +1,36 @@
+# ── Block mau cho vdr.bkauto.vn — dua Khung dan vao nginx server ──
+# Gia su Cloudflare da lo HTTPS phia ngoai; nginx nhan tu CF roi forward
+# vao container Docker (doi IP/port theo may that).
+
+server {
+    listen 443 ssl;
+    server_name vdr.bkauto.vn;
+
+    # ssl_certificate / ssl_certificate_key: dung cert san cua bkauto.vn
+    # (hoac Cloudflare Origin Cert)
+
+    # Web UI (container "web", port 8888)
+    location / {
+        proxy_pass http://127.0.0.1:8888;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # API (container "api", port 8080)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # MQTT-over-WebSocket (container "mqtt", port 9001)
+    # Day la cho QUAN TRONG: header Upgrade/Connection de WS chui qua duoc.
+    location /mqtt {
+        proxy_pass http://127.0.0.1:9001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;   # giu ket noi WS lau, khong cat
+    }
+}

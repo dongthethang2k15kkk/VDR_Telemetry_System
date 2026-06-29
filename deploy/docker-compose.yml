@@ -1,24 +1,39 @@
 # ============================================================
-# VDR Telemetry - Docker Compose cho SERVER (VPS lab)
-# Chay: docker compose up -d
-# Gom 3 service: web (giao dien) + api (REST) + render (lam video bang chung)
-# Pi KHONG nam o day - Pi doc CAN/camera roi DAY data len server (qua MQTT/HTTP).
+# VDR Telemetry - Docker Compose cho SERVER (lab PC)
+# Khung MOI: server chi NHAN su kien tu Pi va luu lich su.
+# Khong dung chung DB voi Pi. Khong render video (video o Pi).
+# Dot nay: mqtt (broker) + subscriber (nhan->ghi DB) + web.
+# api se them lai sau khi viet ban doc server_history.db.
 # ============================================================
 services:
-  api:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.api
-    container_name: vdr_api
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: vdr_mqtt
     restart: unless-stopped
     ports:
-      - "8080:8080"          # API REST
+      - "1883:1883"
+      - "9001:9001"
     volumes:
-      - vdr_data:/data        # DB dung chung (Pi day data vao day)
-    environment:
-      - DATABASE_PATH=/data/telemetry_v1.db
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt_data:/mosquitto/data
     networks:
       - vdr_net
+
+  subscriber:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.subscriber
+    container_name: vdr_subscriber
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - vdr_data:/data
+      - ./secrets:/secrets:ro
+    networks:
+      - vdr_net
+    depends_on:
+      - mqtt
 
   web:
     build:
@@ -27,29 +42,13 @@ services:
     container_name: vdr_web
     restart: unless-stopped
     ports:
-      - "8888:8888"          # Giao dien web
+      - "8888:8888"
     networks:
       - vdr_net
-    depends_on:
-      - api
-
-  render:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.render
-    container_name: vdr_render
-    restart: unless-stopped
-    volumes:
-      - vdr_data:/data        # Doc goi bang chung tho + ghi video da render
-    environment:
-      - DATABASE_PATH=/data/telemetry_v1.db
-    networks:
-      - vdr_net
-    depends_on:
-      - api
 
 volumes:
-  vdr_data:                   # Luu tru ben vung (DB + video) - khong mat khi restart
+  vdr_data:
+  mqtt_data:
 
 networks:
   vdr_net:

@@ -25,7 +25,7 @@ docker compose -f deploy/docker-compose.yml down
 
 Sau khi chạy: truy cập `http://<IP_SERVER>:8888` (giao diện), API ở `http://<IP_SERVER>:8080`.
 
-## CẦN CHỈNH KHI DEPLOY THẬT (đánh dấu nhỡ quên:)) )
+## CẦN CHỈNH KHI DEPLOY THẬT (đánh dấu nhỡ quên)
 
 1. **Đường data**: `config.py` cần đọc `DATABASE_PATH` từ biến môi trường (compose đã set `/data/telemetry_v1.db`). Kiểm tra config.py ưu tiên env này.
 2. **Cơ chế Pi đẩy data lên server**: phần này CHƯA hoàn chỉnh - dự kiến dùng MQTT (store-and-forward) hoặc HTTP push. Cần thêm endpoint nhận data ở api + uploader ở Pi.

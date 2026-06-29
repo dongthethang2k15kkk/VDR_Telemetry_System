@@ -11,7 +11,7 @@
 - **2 kênh truyền tách biệt** (dùng đúng công cụ cho đúng việc):
   - **MQTT-over-WebSocket** — sự kiện (crash/alert) + số liệu live. Nhẹ, realtime.
   - **HTTP POST** — gói bằng chứng (video + obd) dạng `.zip`. File nặng.
-- **Subdomain riêng** `vdr.bkauto.vn` — tách khỏi hustmap, không dùng chung.
+- **Subdomain riêng** `vdr.bkauto.vn`
 - Pi đứng sau NAT/4G nên **Pi luôn chủ động đẩy lên server**, server không gọi ngược xuống Pi.
 
 ---

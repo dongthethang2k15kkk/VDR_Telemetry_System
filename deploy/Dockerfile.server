@@ -1,0 +1,8 @@
+# === SERVER APP (FastAPI + MQTT nen: web + nhan su kien tu Pi) ===
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install --no-cache-dir paho-mqtt fastapi "uvicorn[standard]" python-multipart
+COPY server_app.py ./
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8080
+CMD ["python", "server_app.py"]

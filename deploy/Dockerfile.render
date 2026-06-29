@@ -1,12 +1,7 @@
-# === RENDER WORKER (overlay_engine ve HUD len video bang chung) ===
+# === RENDER WORKER (NAC 1 - khung, chua render that) ===
+# Nac 2 se them cv2/ffmpeg/pandas + overlay_engine.
 FROM python:3.11-slim
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
-COPY deploy/requirements-server.txt .
-RUN pip install --no-cache-dir -r requirements-server.txt
-COPY config.py overlay_engine.py ./
+COPY render_worker.py ./
 ENV PYTHONUNBUFFERED=1
-# Render worker chay nen, doc cac crash PENDING tu DB roi render.
-# (Hien overlay_engine chay 1 lan; sau se bo vong lap "quet PENDING" o giai doan MQTT)
-CMD ["python", "-c", "import time; print('[RENDER] Worker san sang. Cho co che quet PENDING (giai doan MQTT).'); [time.sleep(60) for _ in iter(int, 1)]"]
+CMD ["python", "render_worker.py"]

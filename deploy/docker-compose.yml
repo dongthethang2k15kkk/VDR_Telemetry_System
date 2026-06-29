@@ -1,9 +1,10 @@
 # ============================================================
 # VDR Telemetry - Docker Compose cho SERVER (lab PC)
-# Khung MOI: server chi NHAN su kien tu Pi va luu lich su.
-# Khong dung chung DB voi Pi. Khong render video (video o Pi).
-# Dot nay: mqtt (broker) + subscriber (nhan->ghi DB) + web.
-# api se them lai sau khi viet ban doc server_history.db.
+# mqtt   : broker (nhan su kien/live tu Pi qua WS)
+# server : FastAPI (web/REST/WS) + MQTT nen + nhan upload zip bang chung
+# render : worker quet pending zip -> (NAC1: placeholder) -> cap nhat DB
+# web    : giao dien
+# Server chi luu su kien + video render. obd tho & video goc o Pi.
 # ============================================================
 services:
   mqtt:
@@ -19,12 +20,14 @@ services:
     networks:
       - vdr_net
 
-  subscriber:
+  server:
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.subscriber
-    container_name: vdr_subscriber
+      dockerfile: deploy/Dockerfile.server
+    container_name: vdr_server
     restart: unless-stopped
+    ports:
+      - "8080:8080"
     env_file:
       - .env
     volumes:
@@ -34,6 +37,21 @@ services:
       - vdr_net
     depends_on:
       - mqtt
+
+  render:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.render
+    container_name: vdr_render
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - vdr_data:/data
+    networks:
+      - vdr_net
+    depends_on:
+      - server
 
   web:
     build:
@@ -45,6 +63,8 @@ services:
       - "8888:8888"
     networks:
       - vdr_net
+    depends_on:
+      - server
 
 volumes:
   vdr_data:

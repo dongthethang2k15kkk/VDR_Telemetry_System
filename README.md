@@ -92,9 +92,4 @@ docker compose -f deploy/docker-compose.yml up -d --build
 ---
 
 <div align="center">
-
-**Sáng kiến An toàn Giao thông 2026** · Đại học Bách Khoa Hà Nội (HUST)
-
-*Made with focus on real-world reliability* 🛠️
-
 </div>

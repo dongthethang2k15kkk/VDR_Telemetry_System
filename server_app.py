@@ -18,6 +18,7 @@ import asyncio
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import uvicorn
 
 # ── Config tu env ──
@@ -28,7 +29,7 @@ MQTT_TLS     = os.environ.get("MQTT_TLS", "0") == "1"
 TOPIC_PREFIX = os.environ.get("MQTT_TOPIC_PREFIX", "vdr")
 SERVER_DB    = os.environ.get("SERVER_DB_PATH", "/data/server_history.db")
 EVIDENCE_DIR = os.environ.get("EVIDENCE_DIR", "/data/evidence")  # noi luu zip upload + video render
-LAB_PASSWORD = os.environ.get("LAB_PASSWORD", "bkauto2010")
+LAB_PASSWORD = os.environ.get("LAB_PASSWORD", "")  # đặt trong .env — để trống thì không thể đăng nhập
 
 # ── Schema lich su tren server (khop cot Pi day len) ──
 _SCHEMA = {
@@ -103,6 +104,8 @@ def _on_message(cli, userdata, msg):
 
 def _mqtt_thread():
     cli = mqtt.Client(client_id="vdr-server-app", transport="websockets")
+    if os.environ.get("MQTT_USER"):
+        cli.username_pw_set(os.environ["MQTT_USER"], os.environ.get("MQTT_PASS", ""))
     cli.ws_set_options(path=MQTT_WS_PATH)
     if MQTT_TLS:
         cli.tls_set()
@@ -135,7 +138,7 @@ def _startup():
 
 @app.post("/api/login")
 def lab_login(payload: dict):
-    if (payload or {}).get("password", "") == LAB_PASSWORD:
+    if LAB_PASSWORD and (payload or {}).get("password", "") == LAB_PASSWORD:
         return {"status": "success"}
     raise HTTPException(status_code=401, detail="Sai mat khau")
 
@@ -252,6 +255,16 @@ async def upload_evidence(device: str = Form("pi-01"), crash_id: int = Form(...)
         fo.write(data)
     print(f"📦 [SRV] Nhan goi bang chung: {dest} ({len(data)} bytes)")
     return {"status": "received", "crash_id": crash_id, "bytes": len(data)}
+
+
+@app.get("/api/evidence/{filename}")
+def get_evidence(filename: str):
+    """Web phat video bang chung da render (render worker ghi vao rendered/)."""
+    safe = os.path.basename(filename)
+    for cand in (os.path.join(EVIDENCE_DIR, "rendered", safe), os.path.join(EVIDENCE_DIR, safe)):
+        if os.path.isfile(cand):
+            return FileResponse(cand, media_type="video/mp4", filename=safe)
+    raise HTTPException(status_code=404, detail="Chua co video cho su co nay")
 
 
 if __name__ == "__main__":

@@ -35,6 +35,8 @@ _CONFIG_KEY = lambda tbl: f"mqtt_last_id_{tbl}"
 def _connect():
     cid = f"vdr-uploader-{config.MQTT_DEVICE_ID}"
     cli = mqtt.Client(client_id=cid, transport="websockets")
+    if getattr(config, "MQTT_USER", ""):
+        cli.username_pw_set(config.MQTT_USER, getattr(config, "MQTT_PASS", ""))
     cli.ws_set_options(path=config.MQTT_WS_PATH)
     if config.MQTT_TLS:
         cli.tls_set()

@@ -23,3 +23,9 @@ google-services.json
 calibration_*.txt
 *.bak*
 deploy/*.bak*
+*.bak.*
+*.save
+deploy/secrets/
+deploy/.env
+*.onnx
+web_ui/apply_theme.sh

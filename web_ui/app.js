@@ -136,13 +136,13 @@ const HistoryChartRenderer = (function() {
             backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
-                backgroundColor: '#111820',
-                borderColor: '#1e2a36',
-                textStyle: { color: '#e8edf2', fontFamily: "'Geist Mono', monospace", fontSize: 11 }
+                backgroundColor: '#3b2412',
+                borderColor: '#8a5330',
+                textStyle: { color: '#ffe9b8', fontFamily: "'Geist Mono', monospace", fontSize: 11 }
             },
             legend: {
                 data: ['Speed', 'Throttle', 'RPM'],
-                textStyle: { color: '#4a5a6a', fontSize: 10, fontFamily: "'Geist Mono', monospace" },
+                textStyle: { color: '#5f3d20', fontSize: 10, fontFamily: "'Geist Mono', monospace" },
                 top: 0, right: 0,
                 icon: 'circle',
                 itemWidth: 7,
@@ -153,35 +153,35 @@ const HistoryChartRenderer = (function() {
                 type: 'category',
                 data: labels,
                 axisLabel: { show: false },
-                axisLine: { lineStyle: { color: '#1e2a36' } },
+                axisLine: { lineStyle: { color: 'rgba(92,51,23,0.45)' } },
                 splitLine: { show: false }
             },
             yAxis: [
                 {
                     type: 'value', min: 0, max: 150,
                     position: 'left',
-                    splitLine: { lineStyle: { color: '#1a2430', type: 'dashed' } },
-                    axisLabel: { color: '#4a5a6a', fontSize: 10, fontFamily: "'Geist Mono', monospace" }
+                    splitLine: { lineStyle: { color: 'rgba(92,51,23,0.30)', type: 'dashed' } },
+                    axisLabel: { color: '#5f3d20', fontSize: 10, fontFamily: "'Geist Mono', monospace" }
                 },
                 {
                     type: 'value', min: 0, max: 8000,
                     position: 'right',
                     splitLine: { show: false },
-                    axisLabel: { color: '#4a5a6a', fontSize: 10, fontFamily: "'Geist Mono', monospace" }
+                    axisLabel: { color: '#5f3d20', fontSize: 10, fontFamily: "'Geist Mono', monospace" }
                 }
             ],
             series: [
                 { name: 'Speed', type: 'line', data: speedData, showSymbol: false,
-                  itemStyle: { color: '#00e5b4' }, lineStyle: { width: 1.5 },
+                  itemStyle: { color: '#5cc12e' }, lineStyle: { width: 1.5 },
                   areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                    colorStops: [{ offset: 0, color: 'rgba(0,229,180,0.12)' }, { offset: 1, color: 'rgba(0,229,180,0)' }]
+                    colorStops: [{ offset: 0, color: 'rgba(92,193,46,0.16)' }, { offset: 1, color: 'rgba(92,193,46,0)' }]
                   }}
                 },
                 { name: 'Throttle', type: 'line', data: brakeData, showSymbol: false,
-                  itemStyle: { color: '#f5564a' }, lineStyle: { width: 1.5 }
+                  itemStyle: { color: '#e8402a' }, lineStyle: { width: 1.5 }
                 },
                 { name: 'RPM', type: 'line', yAxisIndex: 1, data: rpmData, showSymbol: false,
-                  itemStyle: { color: '#4a9eff' }, lineStyle: { width: 1, type: 'dashed', opacity: 0.6 }
+                  itemStyle: { color: '#2f9de0' }, lineStyle: { width: 1, type: 'dashed', opacity: 0.6 }
                 }
             ]
         };
@@ -226,10 +226,10 @@ const GaugeRenderer = (function() {
                 itemStyle: { color },
                 progress: { show: true, width: 6, roundCap: true },
                 pointer: { show: true, length: '62%', width: 3, itemStyle: { color } },
-                axisLine: { roundCap: true, lineStyle: { width: 6, color: [[1, '#1a2430']] } },
+                axisLine: { roundCap: true, lineStyle: { width: 6, color: [[1, 'rgba(70,35,10,0.25)']] } },
                 axisTick: { show: false },
-                splitLine: { length: 8, lineStyle: { width: 1.5, color: '#2a3a4a' } },
-                axisLabel: { distance: 16, color: '#4a5a6a', fontSize: 9,
+                splitLine: { length: 8, lineStyle: { width: 1.5, color: '#8a5330' } },
+                axisLabel: { distance: 16, color: '#5f3d20', fontSize: 9,
                              fontFamily: "'Geist Mono', monospace" },
                 title: { show: false },
                 detail: {
@@ -238,7 +238,7 @@ const GaugeRenderer = (function() {
                     fontSize: 20,
                     fontWeight: 700,
                     fontFamily: "'Geist Mono', monospace",
-                    color: '#e8edf2',
+                    color: '#3b2412',
                     formatter: `{value}${unit}`
                 },
                 data: [{ value: 0 }]
@@ -251,9 +251,9 @@ const GaugeRenderer = (function() {
         rpmChart   = echarts.init(document.getElementById('rpmGauge'),   null, { renderer: 'canvas' });
         brakeChart = echarts.init(document.getElementById('brakeGauge'), null, { renderer: 'canvas' });
 
-        speedChart.setOption(getGaugeOption(0, 150,  '#00e5b4', ''));
-        rpmChart.setOption(  getGaugeOption(0, 8000, '#4a9eff', ''));
-        brakeChart.setOption(getGaugeOption(0, 100,  '#f5564a', '%'));
+        speedChart.setOption(getGaugeOption(0, 150,  '#5cc12e', ''));
+        rpmChart.setOption(  getGaugeOption(0, 8000, '#2f9de0', ''));
+        brakeChart.setOption(getGaugeOption(0, 100,  '#e8402a', '%'));
 
         window.addEventListener('resize', () => {
             speedChart.resize(); rpmChart.resize(); brakeChart.resize();
@@ -271,11 +271,11 @@ const GaugeRenderer = (function() {
 
         if (brakeVal > 80 && !isBrakeCritical) {
             isBrakeCritical = true;
-            brakeChart.setOption({ series: [{ itemStyle: { color: '#ff3d30' }, progress: { itemStyle: { color: '#ff3d30' } } }] });
+            brakeChart.setOption({ series: [{ itemStyle: { color: '#ff5a2e' }, progress: { itemStyle: { color: '#ff5a2e' } } }] });
             el.classList.add('gauge-pulse');
         } else if (brakeVal <= 80 && isBrakeCritical) {
             isBrakeCritical = false;
-            brakeChart.setOption({ series: [{ itemStyle: { color: '#f5564a' }, progress: { itemStyle: { color: '#f5564a' } } }] });
+            brakeChart.setOption({ series: [{ itemStyle: { color: '#e8402a' }, progress: { itemStyle: { color: '#e8402a' } } }] });
             el.classList.remove('gauge-pulse');
         }
 
@@ -318,7 +318,7 @@ const IncidentLogManager = (function() {
         try {
             const res = await fetch(`${CONFIG.API_URL}/alerts/${id}/resolve`, { method: 'PUT' });
             if (res.ok) {
-                UIController.showToast(`✅ Đã xác nhận bảo trì (ID: ${id})`);
+                UIController.showToast(`Đã xác nhận bảo trì (ID: ${id})`);
                 const row = document.getElementById(`alert-row-${id}`);
                 if (row) {
                     row.style.transform = 'translateY(10px)';
@@ -430,8 +430,8 @@ const VideoController = (function() {
     const img = document.createElement('img');
     img.style.cssText = 'width:100%;height:100%;object-fit:contain;position:absolute;inset:0;z-index:2;';
     img.src = CONFIG.STREAM_URL;
-    img.onload  = () => placeholder.classList.add('hidden');
-    img.onerror = () => placeholder.classList.remove('hidden');
+    img.onload  = () => { placeholder.classList.add('hidden'); img.style.visibility = 'visible'; };
+    img.onerror = () => { placeholder.classList.remove('hidden'); img.style.visibility = 'hidden'; };
     videoEl.replaceWith(img);
 }
     function seekVideo(unixTimestamp) {
@@ -589,7 +589,7 @@ const MaintHistoryManager = (function() {
             const li = document.createElement('li');
             li.className = 'maint-history-row';
             // Task5d: hien note neu co
-            const noteHtml = row.note ? `<div class="maint-history-note">📝 ${row.note}</div>` : '';
+            const noteHtml = row.note ? `<div class="maint-history-note"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> ${row.note}</div>` : '';
             li.innerHTML = `
                 <span class="maint-history-item">${row.item.replace(/_/g,' ')}</span>
                 <div class="maint-history-meta">
@@ -631,7 +631,7 @@ const DTCScanner = (function() {
         if (!el) return;
         el.innerHTML = '';
         if (!items.length) {
-            el.innerHTML = `<li class="dtc-empty">${emptyMsg || '✅ Không có mã lỗi'}</li>`;
+            el.innerHTML = `<li class="dtc-empty"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> ${emptyMsg || 'Không có mã lỗi'}</li>`;
             return;
         }
         items.forEach(it => {
@@ -654,24 +654,24 @@ const DTCScanner = (function() {
 
     async function scan() {
         const b = btn();
-        if (b) { b.disabled = true; b.textContent = '⏳ Đang quét...'; }
+        if (b) { b.disabled = true; b.textContent = 'Đang quét...'; }
         try {
             const res = await fetch(`${CONFIG.API_URL}/dtc/scan`, { method: 'POST' });
             const j = await res.json();
-            renderList(j.data || [], '✅ Không tìm thấy mã lỗi nào');
-            UIController.showToast(`🔍 Quét xong: ${j.count || 0} mã lỗi`);
+            renderList(j.data || [], 'Không tìm thấy mã lỗi nào');
+            UIController.showToast(`Quét xong: ${j.count || 0} mã lỗi`);
         } catch (e) {
-            UIController.showToast('❌ Quét thất bại');
+            UIController.showToast('Quét thất bại');
         } finally {
-            if (b) { b.disabled = false; b.textContent = '🔍 Quét Mã Lỗi'; }
+            if (b) { b.disabled = false; b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Quét mã lỗi'; }
         }
     }
 
     async function clearDtc(id) {
         try {
             const res = await fetch(`${CONFIG.API_URL}/dtc/${id}/clear`, { method: 'PUT' });
-            if (res.ok) { UIController.showToast('✅ Đã đánh dấu xử lý'); fetchHistory(); }
-        } catch (e) { UIController.showToast('❌ Lỗi'); }
+            if (res.ok) { UIController.showToast('Đã đánh dấu xử lý'); fetchHistory(); }
+        } catch (e) { UIController.showToast('Lỗi'); }
     }
 
     async function fetchHistory() {
@@ -679,7 +679,7 @@ const DTCScanner = (function() {
             const res = await fetch(`${CONFIG.API_URL}/dtc/history`);
             const j = await res.json();
             // chi hien ma chua xu ly len dau
-            renderList(j.data || [], '✅ Chưa có mã lỗi');
+            renderList(j.data || [], 'Chưa có mã lỗi');
         } catch (e) { /* im lang */ }
     }
 
@@ -707,14 +707,14 @@ const PredictionManager = (function() {
             const items = j.data || [];
             el.innerHTML = '';
             if (!items.length) {
-                el.innerHTML = '<li class="pred-empty">✅ Chưa phát hiện xu hướng bất thường</li>';
+                el.innerHTML = '<li class="pred-empty"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Chưa phát hiện xu hướng bất thường</li>';
                 return;
             }
             items.forEach(it => {
                 const li = document.createElement('li');
                 li.className = 'pred-row pred-' + (it.severity || 'warning');
                 li.innerHTML = `
-                    <span class="pred-icon">🔮</span>
+                    <span class="pred-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
                     <span class="pred-text">${it.description}</span>`;
                 el.appendChild(li);
             });
@@ -734,10 +734,10 @@ const PredictionManager = (function() {
 // ══════════════════════════════════════════
 const CrashLogManager = (() => {
     const SEV_STYLE = {
-        'NANG':     { color: '#ff3b3b', label: 'NẶNG',     icon: '🔴' },
-        'VUA':      { color: '#ff9500', label: 'VỪA',      icon: '🟠' },
-        'NHE':      { color: '#ffcc00', label: 'NHẸ',      icon: '🟡' },
-        'NGHI_NGO': { color: '#8e8e93', label: 'NGHI NGỜ', icon: '⚪' },
+        'NANG':     { color: '#ff3b3b', label: 'NẶNG',     icon: "<span class='sev-dot'></span>" },
+        'VUA':      { color: '#ff9500', label: 'VỪA',      icon: "<span class='sev-dot'></span>" },
+        'NHE':      { color: '#ffcc00', label: 'NHẸ',      icon: "<span class='sev-dot'></span>" },
+        'NGHI_NGO': { color: '#8e8e93', label: 'NGHI NGỜ', icon: "<span class='sev-dot'></span>" },
     };
 
     function fmtTime(ts) {
@@ -779,8 +779,8 @@ const CrashLogManager = (() => {
                     </div>
                 </div>
                 ${ev.has_video
-                    ? `<button class="btn-evidence" data-id="${ev.id}" data-file="${ev.evidence}">▶ Bằng chứng</button>`
-                    : `<span class="evidence-pending">⏳ Đang tạo bằng chứng</span>`}
+                    ? `<button class="btn-evidence" data-id="${ev.id}" data-file="${ev.evidence}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Bằng chứng</button>`
+                    : `<span class="evidence-pending"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg> Đang tạo bằng chứng</span>`}
             `;
             const btn = li.querySelector('.btn-evidence');
             if (btn) btn.addEventListener('click', () => CrashModal.open(ev.id, ev.evidence, ev));
@@ -1040,7 +1040,7 @@ const MaintenanceManager = (function() {
             const name = LABELS[it.item] || it.item;
             const pct = Math.min(100, Math.round(it.ratio));
             const sev = it.severity || "ok";
-            const sevLabel = sev === "critical" ? "🔴 CRITICAL" : sev === "warning" ? "🟡 SẮP HẠN" : "🟢 OK";
+            const sevLabel = sev === "critical" ? "<span class='sev-dot' style='color:#ff3b3b'></span> CRITICAL" : sev === "warning" ? "<span class='sev-dot' style='color:#ffcc00'></span> SẮP HẠN" : "<span class='sev-dot' style='color:#34c759'></span> OK";
             const fmt = (n) => Number(n).toLocaleString("vi-VN");
             // Dong so lieu: km | gio may (neu co) | ngay con lai
             const stats = [];
@@ -1066,7 +1066,7 @@ const MaintenanceManager = (function() {
                     <div class="maint-stats">${stats.join("  |  ")}</div>
                     <div class="maint-bar"><div class="maint-bar-fill ${sev}" style="width:${pct}%"></div></div>
                 </div>
-                <button class="btn btn-ghost maint-done-btn" data-item="${it.item}">✓ Đã bảo dưỡng</button>`;
+                <button class="btn btn-ghost maint-done-btn" data-item="${it.item}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Đã bảo dưỡng</button>`;
             li.querySelector('button').addEventListener('click', () => markDone(it.item));
             listEl.appendChild(li);
         });
@@ -1083,7 +1083,7 @@ const MaintenanceManager = (function() {
                 body: JSON.stringify({ note })
             });
             if (res.ok) {
-                UIController.showToast(`✅ Đã ghi nhận bảo dưỡng: ${LABELS[item] || item}`);
+                UIController.showToast(`Đã ghi nhận bảo dưỡng: ${LABELS[item] || item}`);
                 fetchMaintenance();
             }
         } catch (e) { console.error('Lỗi đánh dấu bảo dưỡng:', e); }
@@ -1092,7 +1092,7 @@ const MaintenanceManager = (function() {
     async function saveOdo() {
         const input = document.getElementById('odoInput');
         const km = parseFloat(input.value);
-        if (isNaN(km) || km < 0) { UIController.showToast('⚠️ Nhập số km hợp lệ'); return; }
+        if (isNaN(km) || km < 0) { UIController.showToast('Nhập số km hợp lệ'); return; }
         try {
             const res = await fetch(`${CONFIG.API_URL}/maintenance/odometer`, {
                 method: 'PUT',
@@ -1101,7 +1101,7 @@ const MaintenanceManager = (function() {
             });
             if (res.ok) {
                 input.value = '';
-                UIController.showToast(`✅ Đã cập nhật ODO: ${km.toLocaleString()} km`);
+                UIController.showToast(`Đã cập nhật ODO: ${km.toLocaleString()} km`);
                 fetchMaintenance();
             }
         } catch (e) { console.error('Lỗi lưu ODO:', e); }

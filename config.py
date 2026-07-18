@@ -58,6 +58,8 @@ MQTT_WS_PATH= _os.environ.get("MQTT_WS_PATH", "/mqtt")
 MQTT_TLS    = _os.environ.get("MQTT_TLS", "0") == "1"        # 1 = wss qua nginx/Cloudflare
 MQTT_TOPIC_PREFIX = _os.environ.get("MQTT_TOPIC_PREFIX", "vdr")
 MQTT_DEVICE_ID    = _os.environ.get("MQTT_DEVICE_ID", "pi-01")
+MQTT_USER   = _os.environ.get("MQTT_USER", "")             # rong = anonymous (dev)
+MQTT_PASS   = _os.environ.get("MQTT_PASS", "")
 MQTT_UPLOAD_INTERVAL_SEC = int(_os.environ.get("MQTT_UPLOAD_INTERVAL_SEC", "5"))
 
 

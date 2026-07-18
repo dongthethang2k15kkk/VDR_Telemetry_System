@@ -1,10 +1,10 @@
 # ============================================================
 # VDR Telemetry - Docker Compose cho SERVER (lab PC)
-# mqtt   : broker (nhan su kien/live tu Pi qua WS)
-# server : FastAPI (web/REST/WS) + MQTT nen + nhan upload zip bang chung
-# render : worker quet pending zip -> (NAC1: placeholder) -> cap nhat DB
-# web    : giao dien
-# Server chi luu su kien + video render. obd tho & video goc o Pi.
+# mqtt   : broker (nhận sự kiện/live từ Pi qua WS)
+# server : FastAPI (web/REST/WS) + MQTT nền + nhận upload zip bằng chứng
+# render : worker quét zip pending -> render HUD lên video -> cập nhật DB
+# web    : giao diện
+# Server chỉ lưu sự kiện + video đã render. OBD thô & video gốc nằm ở Pi.
 # ============================================================
 services:
   mqtt:
@@ -16,6 +16,7 @@ services:
       - "9001:9001"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./secrets/mosquitto_passwd:/mosquitto/config/passwd:ro
       - mqtt_data:/mosquitto/data
     networks:
       - vdr_net

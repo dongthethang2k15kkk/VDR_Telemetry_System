@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BK-AutoBlackBox — VDR</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600;700&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="theme-wood.css">
 </head>
 <body>
 
@@ -89,7 +90,7 @@
     <div class="panel-body">
         <div class="sub-section">
             <div class="sub-label">Mã lỗi (DTC)</div>
-            <button class="btn btn-ghost dtc-scan-btn" id="btnDtcScan">Quét mã lỗi</button>
+            <button class="btn btn-ghost dtc-scan-btn" id="btnDtcScan"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Quét mã lỗi</button>
             <ul class="dtc-list" id="dtcList"></ul>
         </div>
         <div class="sub-section">
@@ -213,20 +214,20 @@
 <!-- ====== TAKEOVER: canh bao tai nan che vung du lieu xe ====== -->
 <div class="crash-takeover hidden" id="crashTakeover">
     <div class="takeover-inner">
-        <div class="takeover-pulse">⚠️</div>
+        <div class="takeover-pulse"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
         <div class="takeover-title">PHÁT HIỆN TAI NẠN</div>
         <div class="takeover-sev" id="takeoverSev">NANG</div>
         <div class="takeover-meta" id="takeoverMeta"></div>
         <div class="takeover-actions">
-            <button class="takeover-btn-video" id="takeoverVideo">▶ Xem bằng chứng</button>
-            <button class="takeover-btn-ack" id="takeoverAck">✓ Tôi đã biết</button>
+            <button class="takeover-btn-video" id="takeoverVideo"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Xem bằng chứng</button>
+            <button class="takeover-btn-ack" id="takeoverAck"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Tôi đã biết</button>
         </div>
     </div>
 </div>
 <div class="crash-modal hidden" id="crashModal">
     <div class="crash-modal-box">
         <div class="crash-modal-head">
-            <span class="crash-modal-title">🚨 Video bằng chứng tai nạn</span>
+            <span class="crash-modal-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg> Video bằng chứng tai nạn</span>
             <button class="crash-modal-close" id="crashModalClose">&times;</button>
         </div>
         <video id="crashVideo" class="crash-modal-video" controls playsinline></video>

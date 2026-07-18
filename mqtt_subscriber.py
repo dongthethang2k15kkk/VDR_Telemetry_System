@@ -100,6 +100,8 @@ def on_message(cli, userdata, msg):
 def main():
     _init_db()
     cli = mqtt.Client(client_id="vdr-server-sub", transport="websockets")
+    if os.environ.get("MQTT_USER"):
+        cli.username_pw_set(os.environ["MQTT_USER"], os.environ.get("MQTT_PASS", ""))
     cli.ws_set_options(path=MQTT_WS_PATH)
     if MQTT_TLS:
         cli.tls_set()

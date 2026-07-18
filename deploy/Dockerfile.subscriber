@@ -1,8 +1,0 @@
-# === MQTT SUBSCRIBER (nhan su kien tu Pi -> ghi DB lich su server) ===
-FROM python:3.11-slim
-WORKDIR /app
-RUN pip install --no-cache-dir paho-mqtt
-# Subscriber chi can chinh no + config (khong dung cv2/ffmpeg/obd_module)
-COPY mqtt_subscriber.py ./
-ENV PYTHONUNBUFFERED=1
-CMD ["python", "mqtt_subscriber.py"]

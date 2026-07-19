@@ -133,5 +133,5 @@ HEALTH_MISS_RATE_MAX: Final[float] = 0.05
 HEALTH_DEBOUNCE_CYCLES: Final[int] = 3
 HEALTH_BASELINE = {}
 
-# ===== Dang nhap Lab (doi mat khau o day) =====
-LAB_PASSWORD = "bkauto2010"
+# ===== Dang nhap Lab: uu tien bien moi truong LAB_PASSWORD, khong co gia tri mac dinh =====
+LAB_PASSWORD = _os.environ.get("LAB_PASSWORD", "")

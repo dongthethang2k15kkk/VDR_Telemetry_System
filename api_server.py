@@ -1,3 +1,5 @@
+import os
+import subprocess
 import datetime
 import cv2
 from fastapi.responses import StreamingResponse
@@ -18,7 +20,7 @@ app = FastAPI(title="BK-AutoBlackBox API")
 def lab_login(payload: dict):
     """Kiem tra mat khau Lab (so voi config.py)."""
     pw = (payload or {}).get("password", "")
-    if pw == LAB_PASSWORD:
+    if LAB_PASSWORD and pw == LAB_PASSWORD:
         return {"status": "success"}
     raise HTTPException(status_code=401, detail="Sai mat khau")
 
@@ -573,3 +575,90 @@ def unregister_token(payload: dict):
         return {"status": "success"}
     finally:
         conn.close()
+
+
+# ==========================================
+# KHỐI: THIẾT BỊ (capabilities + health) — nền tảng để web ẩn/hiện panel
+# ==========================================
+@app.get("/api/device/capabilities")
+def device_capabilities():
+    """Bao cho web biet dang noi vao Pi va co nhung tinh nang thiet bi nao.
+    server_app.py (chay tren server lab) KHONG co route nay -> web fetch loi/404
+    la hieu dang xem ban server, tu an cac panel thiet bi."""
+    return {"device": "pi", "features": ["health"]}
+
+
+@app.get("/api/system/health")
+def system_health():
+    """Suc khoe phan cung Pi: CPU%, nhiet do, RAM, uptime. Doc thang /proc va /sys, khong can psutil."""
+
+    def _cpu_percent(interval=0.15):
+        def _read():
+            with open("/proc/stat") as f:
+                parts = f.readline().split()[1:8]
+            vals = list(map(int, parts))
+            idle = vals[3] + vals[4]
+            total = sum(vals)
+            return idle, total
+        try:
+            idle1, total1 = _read()
+            time.sleep(interval)
+            idle2, total2 = _read()
+            d_idle = idle2 - idle1
+            d_total = total2 - total1
+            if d_total <= 0:
+                return None
+            return round((1 - d_idle / d_total) * 100, 1)
+        except Exception:
+            return None
+
+    def _temp_c():
+        for path in ("/sys/class/thermal/thermal_zone0/temp",
+                     "/sys/class/thermal/thermal_zone1/temp"):
+            try:
+                with open(path) as f:
+                    raw = int(f.read().strip())
+                return round(raw / 1000, 1)
+            except Exception:
+                continue
+        return None
+
+    def _mem():
+        try:
+            info = {}
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    k, v = line.split(":", 1)
+                    info[k.strip()] = int(v.strip().split()[0])
+            total_mb = info.get("MemTotal", 0) / 1024
+            avail_mb = info.get("MemAvailable", 0) / 1024
+            used_pct = round((1 - avail_mb / total_mb) * 100, 1) if total_mb else None
+            return {"total_mb": round(total_mb), "used_percent": used_pct}
+        except Exception:
+            return {"total_mb": None, "used_percent": None}
+
+    def _uptime_sec():
+        try:
+            with open("/proc/uptime") as f:
+                return round(float(f.read().split()[0]))
+        except Exception:
+            return None
+
+    def _git_hash():
+        try:
+            out = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+                capture_output=True, text=True, timeout=2,
+            )
+            return out.stdout.strip() or None
+        except Exception:
+            return None
+
+    return {
+        "cpu_percent": _cpu_percent(),
+        "temp_c": _temp_c(),
+        "mem": _mem(),
+        "uptime_sec": _uptime_sec(),
+        "version": _git_hash(),
+    }

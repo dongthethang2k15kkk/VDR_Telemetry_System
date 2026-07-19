@@ -24,7 +24,8 @@ cd VDR_Telemetry_System/deploy
 docker run --rm -v "$PWD/secrets:/pw" eclipse-mosquitto:2 \
   mosquitto_passwd -c -b /pw/mosquitto_passwd vdr 'MAT_KHAU_MANH'
 
-# 3. Tạo file cấu hình rồi mở ra điền: MQTT_USER=vdr, MQTT_PASS, LAB_PASSWORD
+# 3. Tạo file cấu hình rồi mở ra điền: MQTT_USER, MQTT_PASS, LAB_PASSWORD
+#    LƯU Ý: để trống LAB_PASSWORD -> KHÔNG ai đăng nhập được web (không phải mặc định "cho qua")
 cp .env.example .env
 
 # 4. (Tùy chọn) Bật thông báo đẩy Firebase — thiếu file này hệ thống vẫn chạy, chỉ tắt push

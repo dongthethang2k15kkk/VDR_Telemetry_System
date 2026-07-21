@@ -442,7 +442,10 @@ class OBDReader:
                         self._reconnect_warned = True
                     self.bus = self._init_can_bus()
                     if self.bus is None:
-                        time.sleep(10)
+                        for _rc in range(10):
+                            if not self.running:
+                                break
+                            time.sleep(1)
                         continue
                     print("✅ [OBD] Đã kết nối lại CAN Bus thành công!")
                     self._reconnect_warned = False

@@ -58,8 +58,11 @@ def run_crash_isolated():
     import time as _t
     cd = CrashDetector()
     cd.start()
-    while True:
-        _t.sleep(1)
+    try:
+        while True:
+            _t.sleep(1)
+    except KeyboardInterrupt:
+        pass  # Da nhan Ctrl+C, thoat em diu, khong in traceback
 
 
 def run_mqtt_uploader_isolated():

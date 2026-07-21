@@ -17,6 +17,7 @@ from config import (
     CRASH_MPU_I2C_BUS, CRASH_MPU_I2C_ADDR, CRASH_SAMPLE_RATE_HZ,
     CRASH_GFORCE_THRESHOLD, CRASH_GFORCE_SEVERE, CRASH_TILT_THRESHOLD,
     CRASH_SPEED_DROP_KMH, CRASH_SPEED_DROP_WINDOW_SEC, CRASH_COOLDOWN_SEC,
+    MPU_BASELINE_SPEED_MAX_KMH, MPU_BASELINE_EWMA_ALPHA, MPU_BASELINE_PERSIST_SEC,
 )
 
 # Thanh ghi MPU-6050
@@ -34,6 +35,12 @@ class CrashDetector:
         self._last_crash_time = 0.0
         # speed-drop tracking
         self._speed_history = []  # [(t, speed), ...]
+        # Baseline MPU EWMA (dung yen) - cho auto-calibration doc, khong luu list mau
+        self._mb_g_ewma = None
+        self._mb_g2_ewma = None
+        self._mb_sample_count = 0
+        self._mb_last_persist = 0.0
+        self._mb_current_speed = None
         # DB connection rieng (doc obd_data)
         self.conn = sqlite3.connect(str(DATABASE_PATH), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -46,6 +53,11 @@ class CrashDetector:
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "timestamp_sec REAL, severity TEXT, gforce REAL, "
             "tilt REAL, speed_before REAL, source TEXT, evidence_path TEXT)"
+        )
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS mpu_baseline ("
+            "id INTEGER PRIMARY KEY, g_mean REAL, g_std REAL, "
+            "sample_count INTEGER, updated_at REAL)"
         )
         self.conn.commit()
 
@@ -108,6 +120,32 @@ class CrashDetector:
             return float(r[0]) if r else None
         except Exception:
             return None
+
+    def _update_mpu_baseline(self, gforce, now):
+        """EWMA baseline G luc xe dung yen (loc theo MPU_BASELINE_SPEED_MAX_KMH).
+        Khong luu list mau - chi giu EWMA(G) va EWMA(G^2) de suy ra do lech chuan.
+        Ghi dinh ky xuong bang mpu_baseline (1 dong co dinh) cho auto-calibration doc."""
+        speed = self._mb_current_speed
+        if speed is None or speed > MPU_BASELINE_SPEED_MAX_KMH:
+            return  # xe dang chay hoac chua ro toc do -> bo qua, tranh lech baseline
+        a = MPU_BASELINE_EWMA_ALPHA
+        self._mb_g_ewma = gforce if self._mb_g_ewma is None else (1 - a) * self._mb_g_ewma + a * gforce
+        g2 = gforce * gforce
+        self._mb_g2_ewma = g2 if self._mb_g2_ewma is None else (1 - a) * self._mb_g2_ewma + a * g2
+        self._mb_sample_count += 1
+
+        if now - self._mb_last_persist < MPU_BASELINE_PERSIST_SEC:
+            return
+        self._mb_last_persist = now
+        try:
+            variance = max(0.0, self._mb_g2_ewma - self._mb_g_ewma ** 2)
+            std = variance ** 0.5
+            self.conn.execute(
+                "INSERT OR REPLACE INTO mpu_baseline (id, g_mean, g_std, sample_count, updated_at) VALUES (1,?,?,?,?)",
+                (self._mb_g_ewma, std, self._mb_sample_count, now))
+            self.conn.commit()
+        except Exception as e:
+            print(f"[MPU BASELINE] Lỗi lưu chỉ số: {e}")
 
     def _check_speed_drop(self, now):
         """Tra speed_before neu toc do sut dot ngot, else None."""
@@ -239,7 +277,12 @@ class CrashDetector:
             speed_before = None
             if (now - last_speed_check) >= 0.5:
                 speed_before = self._check_speed_drop(now)
+                self._mb_current_speed = self._get_current_speed()
                 last_speed_check = now
+
+            # Baseline MPU (chi khi xe dung yen) - cho auto-calibration doc, ghi dinh ky
+            if self.has_mpu and gforce is not None:
+                self._update_mpu_baseline(gforce, now)
 
             # ---- Logic quyet dinh ----
             crashed = False

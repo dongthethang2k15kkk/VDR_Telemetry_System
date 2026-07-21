@@ -138,5 +138,10 @@ HEALTH_MISS_RATE_MAX: Final[float] = 0.05
 HEALTH_DEBOUNCE_CYCLES: Final[int] = 3
 HEALTH_BASELINE = {}
 
+# Baseline MPU (dung yen) - EWMA rieng, cham hon HEALTH_EWMA de tranh nhay loan theo rung tam thoi
+MPU_BASELINE_SPEED_MAX_KMH: Final[float] = 1.0   # duoi nguong nay coi la xe dung yen (loc nhieu cam bien toc do)
+MPU_BASELINE_EWMA_ALPHA: Final[float] = 0.02      # cham hon HEALTH_EWMA_ALPHA_LAT (0.2) - baseline can on dinh
+MPU_BASELINE_PERSIST_SEC: Final[float] = 30.0     # ghi DB moi 30s (MPU doc toi 50Hz, khong ghi moi lan doc)
+
 # ===== Dang nhap Lab: uu tien bien moi truong LAB_PASSWORD, khong co gia tri mac dinh =====
 LAB_PASSWORD = _os.environ.get("LAB_PASSWORD", "")

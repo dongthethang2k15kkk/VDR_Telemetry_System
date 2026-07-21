@@ -29,3 +29,4 @@ deploy/secrets/
 deploy/.env
 *.onnx
 web_ui/apply_theme.sh
+auto_calibration_last_run.json

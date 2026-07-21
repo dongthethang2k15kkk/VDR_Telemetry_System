@@ -62,6 +62,10 @@ MQTT_USER   = _os.environ.get("MQTT_USER", "")             # rong = anonymous (d
 MQTT_PASS   = _os.environ.get("MQTT_PASS", "")
 MQTT_UPLOAD_INTERVAL_SEC = int(_os.environ.get("MQTT_UPLOAD_INTERVAL_SEC", "5"))
 
+# ===== Server nhan bang chung (video tai nan) =====
+SERVER_API_URL = _os.environ.get("SERVER_API_URL", "http://localhost:8080/api")  # doi khi len server that
+EVIDENCE_UPLOAD_INTERVAL_SEC = int(_os.environ.get("EVIDENCE_UPLOAD_INTERVAL_SEC", "20"))
+
 
 # ===== OVERLAY ENGINE (video bang chung) =====
 CAMERA_LATENCY_SEC: Final[float] = 0.2   # Tre camera (frame chup luc T, ghi file luc T+tre). Do lai khi doi camera.

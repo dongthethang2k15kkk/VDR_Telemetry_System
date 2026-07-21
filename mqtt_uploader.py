@@ -113,11 +113,16 @@ def main():
     cli = _connect()
     conn = _db()
     interval = config.MQTT_UPLOAD_INTERVAL_SEC
+    live_interval = getattr(config, "MQTT_LIVE_INTERVAL_SEC", 60)
+    last_live = 0.0
     try:
         while True:
             if cli.is_connected():
-                push_live(cli, conn)      # realtime moi vong
-                push_events(cli, conn)    # su kien moi vong
+                now = time.time()
+                if now - last_live >= live_interval:
+                    push_live(cli, conn)      # realtime, gian ra theo MQTT_LIVE_INTERVAL_SEC
+                    last_live = now
+                push_events(cli, conn)    # su kien, giu nguyen tan suat (nhe, quan trong)
             else:
                 print("⏳ [UPLOADER] Chua co ket noi, cho retry...")
             time.sleep(interval)

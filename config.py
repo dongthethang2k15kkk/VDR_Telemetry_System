@@ -61,6 +61,7 @@ MQTT_DEVICE_ID    = _os.environ.get("MQTT_DEVICE_ID", "pi-01")
 MQTT_USER   = _os.environ.get("MQTT_USER", "")             # rong = anonymous (dev)
 MQTT_PASS   = _os.environ.get("MQTT_PASS", "")
 MQTT_UPLOAD_INTERVAL_SEC = int(_os.environ.get("MQTT_UPLOAD_INTERVAL_SEC", "5"))
+MQTT_LIVE_INTERVAL_SEC = int(_os.environ.get("MQTT_LIVE_INTERVAL_SEC", "60"))  # gian push_live rieng, push_events giu nguyen MQTT_UPLOAD_INTERVAL_SEC
 
 # ===== Server nhan bang chung (video tai nan) =====
 SERVER_API_URL = _os.environ.get("SERVER_API_URL", "http://localhost:8080/api")  # doi khi len server that

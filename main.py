@@ -3,6 +3,7 @@ import socketserver
 import time
 import multiprocessing
 import os
+import signal
 from obd_module.ecu_sim import ECUSimulator
 from obd_module.can_app import OBDReader
 from obd_module.db_setup import init_db
@@ -188,6 +189,10 @@ def main():
             target=run_web_ui_server, name="WebUI_Process", daemon=True
         )
         web_process.start()
+
+        def _handle_sigterm(signum, frame):
+            raise KeyboardInterrupt()
+        signal.signal(signal.SIGTERM, _handle_sigterm)
 
         try:
             while True:

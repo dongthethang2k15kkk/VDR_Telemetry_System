@@ -6,12 +6,14 @@ from fastapi.responses import StreamingResponse
 import sqlite3
 import asyncio
 import time
+import threading
+import auto_calibration
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import chuẩn từ config
-from config import DATABASE_PATH, SAMPLING_RATE_HZ, LAB_PASSWORD
+from config import DATABASE_PATH, SAMPLING_RATE_HZ, LAB_PASSWORD, MPU_BASELINE_SPEED_MAX_KMH
 
 app = FastAPI(title="BK-AutoBlackBox API")
 
@@ -662,3 +664,80 @@ def system_health():
         "uptime_sec": _uptime_sec(),
         "version": _git_hash(),
     }
+
+
+# ==========================================
+# KHỐI: AUTO-CALIBRATION (chay nen, khong mo phan cung rieng - doc pid_health/mpu_baseline)
+# ==========================================
+_calib_lock = threading.Lock()
+_calib_running = False
+
+
+def _get_current_speed_kmh():
+    """Doc toc do moi nhat tu obd_data, dung de chan calibrate luc xe dang chay."""
+    try:
+        conn = get_db()
+        r = conn.execute(
+            "SELECT value FROM obd_data WHERE pid=? ORDER BY timestamp_sec DESC LIMIT 1",
+            ("0xd",)
+        ).fetchone()
+        if r is None:
+            r = conn.execute(
+                "SELECT value FROM obd_data WHERE pid_name='Vehicle Speed' ORDER BY timestamp_sec DESC LIMIT 1"
+            ).fetchone()
+        conn.close()
+        return float(r[0]) if r else None
+    except Exception:
+        return None
+
+
+@app.post("/api/calibration/start")
+def calibration_start():
+    global _calib_running
+    speed = _get_current_speed_kmh()
+    if speed is not None and speed > MPU_BASELINE_SPEED_MAX_KMH:
+        raise HTTPException(status_code=423,
+                            detail=f"Xe đang di chuyển ({speed:.0f} km/h) - dừng xe trước khi hiệu chỉnh")
+    with _calib_lock:
+        if _calib_running:
+            raise HTTPException(status_code=409, detail="Đang có 1 lần hiệu chỉnh chạy rồi")
+        _calib_running = True
+
+    def _run():
+        global _calib_running
+        try:
+            auto_calibration.run_checks_and_measure()
+        finally:
+            _calib_running = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
+@app.get("/api/calibration/status")
+def calibration_status():
+    return {
+        "running": _calib_running,
+        "checks": [{"name": n, "status": st, "note": note} for (n, st, note) in auto_calibration.checks],
+        "proposals": [{"name": name, "old": old, "new": new}
+                      for name, (old, new, _) in auto_calibration.proposals.items()],
+    }
+
+
+@app.post("/api/calibration/apply")
+def calibration_apply():
+    if _calib_running:
+        raise HTTPException(status_code=409, detail="Đang chạy hiệu chỉnh, đợi xong rồi mới áp dụng")
+    speed = _get_current_speed_kmh()
+    if speed is not None and speed > MPU_BASELINE_SPEED_MAX_KMH:
+        raise HTTPException(status_code=423,
+                            detail=f"Xe đang di chuyển ({speed:.0f} km/h) - dừng xe trước khi áp dụng")
+    return auto_calibration.apply_proposals()
+
+
+@app.get("/api/calibration/last")
+def calibration_last():
+    last = auto_calibration.get_last_run()
+    if last is None:
+        raise HTTPException(status_code=404, detail="Chưa từng chạy auto-calibration")
+    return last

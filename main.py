@@ -62,6 +62,26 @@ def run_crash_isolated():
         _t.sleep(1)
 
 
+def run_mqtt_uploader_isolated():
+    """Chay day su kien (crash/alert/dtc/trip + live snapshot) len server qua MQTT, doc lap tien trinh."""
+    try:
+        os.setpgrp()
+    except AttributeError:
+        pass
+    import mqtt_uploader
+    mqtt_uploader.main()
+
+
+def run_evidence_uploader_isolated():
+    """Chay quet + nen + upload video bang chung (crash) len server, doc lap tien trinh."""
+    try:
+        os.setpgrp()
+    except AttributeError:
+        pass
+    import evidence_uploader
+    evidence_uploader.main()
+
+
 def main():
     # Tu don tan du lan chay truoc: kill process main.py cu (tru chinh no) + port
     import subprocess, os
@@ -144,6 +164,17 @@ def main():
             target=run_crash_isolated, name="Crash_Process", daemon=True
         )
         crash_process.start()
+
+        # Bật luồng đẩy sự kiện MQTT + upload video bằng chứng lên server (tự động, không cần chạy tay)
+        mqtt_up_process = multiprocessing.Process(
+            target=run_mqtt_uploader_isolated, name="MQTTUploader_Process", daemon=True
+        )
+        mqtt_up_process.start()
+
+        evidence_up_process = multiprocessing.Process(
+            target=run_evidence_uploader_isolated, name="EvidenceUploader_Process", daemon=True
+        )
+        evidence_up_process.start()
 
         # Bật luồng API Server FastAPI (Đã cô lập nhóm tiến trình)
         api_process = multiprocessing.Process(

@@ -458,45 +458,6 @@ const UIController = (function() {
             disconnectWebSocket();
         });
 
-        document.getElementById('toggleMode').addEventListener('change', (e) => {
-            const isSim = e.target.checked;
-            document.getElementById('modeLabel').textContent = isSim ? 'SIM' : 'LIVE';
-            document.getElementById('infoMode').textContent  = isSim ? 'SIM' : 'LIVE';
-            document.getElementById('infoMode').className = 'sys-info-val ' + (isSim ? 'amber' : 'green');
-            state.mode = isSim ? 'simulation' : 'live';
-
-            if (isSim) {
-                document.getElementById('simBadge').classList.remove('hidden');
-                sendCommand({ command: "set_mode", value: "simulation" });
-            } else {
-                document.getElementById('simBadge').classList.add('hidden');
-                sendCommand({ command: "set_mode", value: "live" });
-            }
-        });
-
-        const hzSlider = document.getElementById('hzSlider');
-        const hzInput  = document.getElementById('hzInput');
-
-        function updateHzValue(val) {
-            let hz = parseFloat(val);
-            if (isNaN(hz) || hz < 0.05) hz = 0.05;
-            if (hz > 5) hz = 5;
-            hzSlider.value = hz;
-            hzInput.value = hz;
-            state.hz = hz;
-            document.getElementById('infoHz').textContent = hz + ' Hz';
-
-            if (state.isConnected || state.mode === 'simulation') {
-                document.getElementById('wsStatusText').textContent = `CONNECTED — ${hz}Hz`;
-            }
-
-            sendCommand({ command: "set_hz", value: hz });
-        }
-
-        hzSlider.addEventListener('input', (e) => updateHzValue(e.target.value));
-        hzInput.addEventListener('blur',    (e) => updateHzValue(e.target.value));
-        hzInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') updateHzValue(e.target.value); });
-
         document.getElementById('btnClear').addEventListener('click',  IncidentLogManager.clearLog);
         document.getElementById('btnExport').addEventListener('click', IncidentLogManager.exportCsv);
     }
@@ -507,7 +468,7 @@ const UIController = (function() {
         ledEl.className = 'status-led';
 
         if (status === 'connected') {
-            textEl.textContent = `CONNECTED — ${state.hz}Hz`;
+            textEl.textContent = 'CONNECTED';
             ledEl.classList.add('led-online');
         } else if (status === 'disconnected') {
             textEl.textContent = 'DISCONNECTED';
@@ -1125,6 +1086,85 @@ const DeviceCapabilitiesManager = (function() {
     return { init };
 })();
 
+
+// ============================================================
+// MODULE 10: Storage Manager
+// ============================================================
+const StorageManagerUI = (function() {
+    const overlay = () => document.getElementById('storageOverlay');
+    const btnCleanup = () => document.getElementById('btnStorageCleanup');
+    const statusText = () => document.getElementById('storageStatusText');
+
+    function formatDate(ts) {
+        if (!ts) return '--';
+        const d = new Date(ts * 1000);
+        return d.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' });
+    }
+
+    function render(data) {
+        document.getElementById('storageUsedGb').textContent = data.used_gb;
+        document.getElementById('storageTotalGb').textContent = data.total_gb;
+        document.getElementById('storageFreeGb').textContent = data.free_gb + ' GB';
+        document.getElementById('storageVideoInfo').textContent =
+            `${data.video_file_count} file, ${data.video_total_mb} MB`;
+        document.getElementById('storageOldest').textContent = formatDate(data.oldest_video_timestamp);
+        document.getElementById('storagePolicy').textContent =
+            `Dọn khi > ${data.threshold_percent}% | Giữ DB ${data.retention_days} ngày`;
+
+        const fill = document.getElementById('storageBarFill');
+        fill.style.width = Math.min(data.usage_percent, 100) + '%';
+        fill.className = 'maint-bar-fill ' +
+            (data.usage_percent >= data.threshold_percent ? 'critical' :
+             data.usage_percent >= data.threshold_percent - 20 ? 'warning' : 'ok');
+    }
+
+    function fetchStatus() {
+        fetch(`${CONFIG.API_URL}/storage/status`)
+            .then(r => r.json())
+            .then(render)
+            .catch(() => { statusText().textContent = 'Không tải được trạng thái'; });
+    }
+
+    function open() {
+        overlay().classList.remove('hidden');
+        statusText().textContent = '';
+        fetchStatus();
+    }
+    function close() {
+        overlay().classList.add('hidden');
+    }
+
+    async function cleanup() {
+        btnCleanup().disabled = true;
+        btnCleanup().textContent = 'Đang dọn...';
+        statusText().textContent = '';
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/storage/cleanup`, { method: 'POST' });
+            const j = await res.json();
+            if (!res.ok) {
+                UIController.showToast(j.detail || 'Dọn dẹp thất bại');
+            } else {
+                UIController.showToast(`Đã dọn: ${j.before_percent}% -> ${j.after_percent}%`);
+                fetchStatus();
+            }
+        } catch (e) {
+            UIController.showToast('Lỗi kết nối');
+        } finally {
+            btnCleanup().disabled = false;
+            btnCleanup().textContent = 'Dọn ngay';
+        }
+    }
+
+    function init() {
+        document.getElementById('btnOpenStorage').addEventListener('click', open);
+        document.getElementById('btnCloseStorage').addEventListener('click', close);
+        overlay().addEventListener('click', (e) => { if (e.target === overlay()) close(); });
+        btnCleanup().addEventListener('click', cleanup);
+    }
+
+    return { init };
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     // ===== Dang nhap Lab =====
     (function setupLogin() {
@@ -1199,6 +1239,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CrashTakeover.init();
     CalibrationManager.init();
     DeviceCapabilitiesManager.init();
+    StorageManagerUI.init();
     
     const tsEl = document.getElementById('hudTimestamp');
     if (tsEl) {
@@ -1218,11 +1259,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    if (document.getElementById('toggleMode').checked) {
-        state.mode = 'simulation';
-        document.getElementById('simBadge').classList.remove('hidden');
-        document.getElementById('modeLabel').textContent = 'SIM';
-    }
 });
 // ============================================================
 // MODULE 7: Maintenance Manager (bảo dưỡng)

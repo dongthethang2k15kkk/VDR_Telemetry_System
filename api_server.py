@@ -741,3 +741,58 @@ def calibration_last():
     if last is None:
         raise HTTPException(status_code=404, detail="Chưa từng chạy auto-calibration")
     return last
+
+
+# ==========================================
+# KHỐI: STORAGE MANAGER (% đĩa, dọn theo chính sách)
+# ==========================================
+_storage_cleanup_lock = threading.Lock()
+_storage_cleanup_running = False
+
+
+@app.get("/api/storage/status")
+def storage_status():
+    import shutil as _shutil
+    from config import STORAGE_DIR
+    from storage_manager import DiskRotation
+
+    dr = DiskRotation()
+    total, used, free = _shutil.disk_usage(STORAGE_DIR)
+    video_files = [f for f in os.listdir(STORAGE_DIR) if f.endswith(".mp4") or f.endswith(".ts")]
+    video_paths = [os.path.join(STORAGE_DIR, f) for f in video_files]
+    video_total_bytes = sum(os.path.getsize(p) for p in video_paths if os.path.exists(p))
+    oldest_ts = None
+    if video_paths:
+        oldest_ts = min(os.path.getmtime(p) for p in video_paths if os.path.exists(p))
+
+    return {
+        "usage_percent": round((used / total) * 100, 1),
+        "total_gb": round(total / (1024**3), 1),
+        "used_gb": round(used / (1024**3), 1),
+        "free_gb": round(free / (1024**3), 1),
+        "threshold_percent": dr.threshold,
+        "retention_days": dr.retention_days,
+        "video_file_count": len(video_files),
+        "video_total_mb": round(video_total_bytes / (1024**2), 1),
+        "oldest_video_timestamp": oldest_ts,
+    }
+
+
+@app.post("/api/storage/cleanup")
+def storage_cleanup():
+    global _storage_cleanup_running
+    with _storage_cleanup_lock:
+        if _storage_cleanup_running:
+            raise HTTPException(status_code=409, detail="Đang dọn dẹp rồi, đợi xong")
+        _storage_cleanup_running = True
+
+    try:
+        from storage_manager import DiskRotation
+        dr = DiskRotation()
+        before = dr.get_disk_usage()
+        dr.delete_oldest_files()
+        dr._cleanup_database()
+        after = dr.get_disk_usage()
+        return {"before_percent": round(before, 1), "after_percent": round(after, 1), "cleaned": True}
+    finally:
+        _storage_cleanup_running = False

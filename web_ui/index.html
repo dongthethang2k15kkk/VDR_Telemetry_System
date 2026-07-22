@@ -25,7 +25,6 @@
     </div>
 </div>
 
-<div id="simBadge" class="sim-badge hidden">SIMULATION</div>
 
 <div class="dashboard-grid">
 
@@ -138,34 +137,24 @@
         </div>
         <div class="ctrl-divider"></div>
         <div class="ctrl-group">
-            <span class="ctrl-mini-label">Chế độ</span>
-            <label class="toggle-switch">
-                <input type="checkbox" id="toggleMode"><span class="slider"></span>
-            </label>
-            <span class="toggle-label" id="modeLabel">LIVE</span>
-        </div>
-        <div class="ctrl-divider"></div>
-        <div class="ctrl-group">
-            <span class="ctrl-mini-label">Tần số</span>
-            <input type="range" class="hz-slider" id="hzSlider" min="0.05" max="5" step="0.05" value="1">
-            <input type="number" class="hz-input" id="hzInput" min="0.05" max="5" step="0.05" value="1">
-            <span class="hz-unit">Hz</span>
-        </div>
-        <div class="ctrl-divider"></div>
-        <div class="ctrl-group">
             <button class="btn btn-ghost" id="btnOpenCalibration">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/><path d="m9 14 2 2 4-4"/></svg>
                 Auto-Calibration
             </button>
         </div>
         <div class="ctrl-divider"></div>
+        <div class="ctrl-group">
+            <button class="btn btn-ghost" id="btnOpenStorage">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                Bộ nhớ
+            </button>
+        </div>
+        <div class="ctrl-divider"></div>
         <div class="ctrl-group ctrl-sysinfo">
-            <span class="sys-chip">Kết nối: <b id="deviceBadge">…</b></span>
+            <span class="sys-chip"><b id="deviceBadge">…</b></span>
             <span class="sys-chip hidden" id="cpuChip">CPU: <b class="green" id="infoCpu">--</b></span>
             <span class="sys-chip hidden" id="tempChip">Nhiệt: <b class="green" id="infoTemp">--</b></span>
             <span class="sys-chip">WS: <b id="infoWsUrl">—</b></span>
-            <span class="sys-chip">Tần số: <b class="green" id="infoHz">10 Hz</b></span>
-            <span class="sys-chip">Chế độ: <b class="amber" id="infoMode">LIVE</b></span>
             <span class="sys-chip">Sự kiện: <b class="red" id="infoEvents">0</b></span>
         </div>
     </div>
@@ -214,6 +203,46 @@
                 <div class="sub-label">Đề xuất hiệu chỉnh</div>
                 <ul class="calib-proposals-list" id="calibProposalsList"></ul>
                 <button class="btn btn-connect" id="btnCalibApply" disabled>Áp dụng</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-overlay hidden" id="storageOverlay">
+    <div class="modal-panel">
+        <div class="modal-head">
+            <span class="modal-title">Bộ nhớ</span>
+            <button class="btn-icon" id="btnCloseStorage">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="odo-row">
+                <span class="odo-current">Ổ đĩa: <b id="storageUsedGb">--</b> / <b id="storageTotalGb">--</b> GB</span>
+            </div>
+            <div class="maint-bar">
+                <div class="maint-bar-fill ok" id="storageBarFill" style="width:0%"></div>
+            </div>
+            <div class="calib-proposals-section">
+                <div class="calib-proposal-row">
+                    <span class="calib-proposal-name">Còn trống</span>
+                    <span class="calib-proposal-change" id="storageFreeGb">-- GB</span>
+                </div>
+                <div class="calib-proposal-row">
+                    <span class="calib-proposal-name">Video ghi hình</span>
+                    <span class="calib-proposal-change" id="storageVideoInfo">--</span>
+                </div>
+                <div class="calib-proposal-row">
+                    <span class="calib-proposal-name">Video cũ nhất</span>
+                    <span class="calib-proposal-change" id="storageOldest">--</span>
+                </div>
+                <div class="calib-proposal-row">
+                    <span class="calib-proposal-name">Chính sách tự động</span>
+                    <span class="calib-proposal-change" id="storagePolicy">--</span>
+                </div>
+            </div>
+            <div class="calib-actions" style="margin-top:14px;">
+                <button class="btn btn-connect" id="btnStorageCleanup">Dọn ngay</button>
+                <span class="calib-status-text" id="storageStatusText"></span>
             </div>
         </div>
     </div>

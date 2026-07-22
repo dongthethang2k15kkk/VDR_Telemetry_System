@@ -15,6 +15,7 @@ let state = {
 };
 
 function formatHudTime(unixTimestamp) {
+    if (!unixTimestamp) return "-- Chưa có dữ liệu --";
     const date = new Date(unixTimestamp * 1000);
     const pad = n => String(n).padStart(2, "0");
     const ms  = String(date.getMilliseconds()).padStart(3, "0");
@@ -911,6 +912,171 @@ const CrashTakeover = (() => {
     return { init, check };
 })();
 
+
+// ============================================================
+// MODULE 8: Auto-Calibration
+// ============================================================
+const CalibrationManager = (function() {
+    const overlay = () => document.getElementById('calibrationOverlay');
+    const listEl = () => document.getElementById('calibChecklist');
+    const emptyEl = () => document.getElementById('calibEmpty');
+    const proposalsSection = () => document.getElementById('calibProposalsSection');
+    const proposalsList = () => document.getElementById('calibProposalsList');
+    const btnStart = () => document.getElementById('btnCalibStart');
+    const btnApply = () => document.getElementById('btnCalibApply');
+    const statusText = () => document.getElementById('calibStatusText');
+
+    let pollTimer = null;
+
+    const ICONS = {
+        OK:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+        WARN: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>',
+        FAIL: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+        INFO: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    };
+
+    function open() {
+        overlay().classList.remove('hidden');
+        fetchLast();
+    }
+    function close() {
+        overlay().classList.add('hidden');
+        stopPolling();
+    }
+
+    function renderChecklist(checks) {
+        const list = listEl();
+        const empty = emptyEl();
+        list.innerHTML = '';
+        if (!checks || !checks.length) {
+            empty.classList.remove('hidden');
+            return;
+        }
+        empty.classList.add('hidden');
+        checks.forEach(c => {
+            const li = document.createElement('li');
+            li.className = 'calib-row';
+            li.innerHTML = `
+                <span class="calib-icon">${ICONS[c.status] || ICONS.INFO}</span>
+                <span class="calib-name">${c.name}</span>
+                <span class="calib-note">${c.note || ''}</span>`;
+            list.appendChild(li);
+        });
+    }
+
+    function renderProposals(proposals) {
+        const section = proposalsSection();
+        const list = proposalsList();
+        list.innerHTML = '';
+        if (!proposals || !proposals.length) {
+            section.classList.add('hidden');
+            btnApply().disabled = true;
+            return;
+        }
+        section.classList.remove('hidden');
+        btnApply().disabled = false;
+        proposals.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'calib-proposal-row';
+            li.innerHTML = `<span class="calib-proposal-name">${p.name}</span>
+                <span class="calib-proposal-change">${p.old} &rarr; <b class="green">${p.new}</b></span>`;
+            list.appendChild(li);
+        });
+    }
+
+    function fetchLast() {
+        fetch(`${CONFIG.API_URL}/calibration/last`)
+            .then(r => r.ok ? r.json() : null)
+            .then(res => {
+                if (!res) { renderChecklist([]); renderProposals([]); return; }
+                renderChecklist(res.checks || []);
+                renderProposals(res.applied ? [] : (res.proposals || []));
+                statusText().textContent = res.applied ? 'Đã áp dụng lần chạy trước.' : '';
+            })
+            .catch(() => { renderChecklist([]); renderProposals([]); });
+    }
+
+    function pollStatus() {
+        fetch(`${CONFIG.API_URL}/calibration/status`)
+            .then(r => r.json())
+            .then(res => {
+                renderChecklist(res.checks || []);
+                if (!res.running) {
+                    stopPolling();
+                    renderProposals(res.proposals || []);
+                    btnStart().disabled = false;
+                    btnStart().textContent = 'Bắt đầu';
+                    statusText().textContent = (res.proposals && res.proposals.length)
+                        ? 'Hoàn tất - xem đề xuất bên dưới.'
+                        : 'Hoàn tất - không có đề xuất nào.';
+                }
+            })
+            .catch(() => {});
+    }
+
+    function startPolling() {
+        stopPolling();
+        pollTimer = setInterval(pollStatus, 1500);
+    }
+    function stopPolling() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    async function start() {
+        btnStart().disabled = true;
+        btnStart().textContent = 'Đang chạy...';
+        statusText().textContent = '';
+        proposalsSection().classList.add('hidden');
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/calibration/start`, { method: 'POST' });
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                UIController.showToast(j.detail || 'Không bắt đầu được');
+                btnStart().disabled = false;
+                btnStart().textContent = 'Bắt đầu';
+                return;
+            }
+            startPolling();
+        } catch (e) {
+            UIController.showToast('Lỗi kết nối');
+            btnStart().disabled = false;
+            btnStart().textContent = 'Bắt đầu';
+        }
+    }
+
+    async function apply() {
+        btnApply().disabled = true;
+        btnApply().textContent = 'Đang ghi...';
+        try {
+            const res = await fetch(`${CONFIG.API_URL}/calibration/apply`, { method: 'POST' });
+            const j = await res.json();
+            if (!res.ok) {
+                UIController.showToast(j.detail || 'Áp dụng thất bại');
+            } else if (j.applied) {
+                UIController.showToast('Đã ghi config.py - khởi động lại main.py để áp dụng');
+                statusText().textContent = 'Đã áp dụng. Cần restart main.py (service) để nhận thay đổi.';
+            } else {
+                UIController.showToast('Không có gì để áp dụng');
+            }
+        } catch (e) {
+            UIController.showToast('Lỗi kết nối');
+        } finally {
+            btnApply().textContent = 'Áp dụng';
+            btnApply().disabled = false;
+        }
+    }
+
+    function init() {
+        document.getElementById('btnOpenCalibration').addEventListener('click', open);
+        document.getElementById('btnCloseCalibration').addEventListener('click', close);
+        overlay().addEventListener('click', (e) => { if (e.target === overlay()) close(); });
+        btnStart().addEventListener('click', start);
+        btnApply().addEventListener('click', apply);
+    }
+
+    return { init };
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     // ===== Dang nhap Lab =====
     (function setupLogin() {
@@ -983,6 +1149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CrashLogManager.init();
     CrashModal.init();
     CrashTakeover.init();
+    CalibrationManager.init();
     
     const tsEl = document.getElementById('hudTimestamp');
     if (tsEl) {

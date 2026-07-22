@@ -152,6 +152,13 @@
             <span class="hz-unit">Hz</span>
         </div>
         <div class="ctrl-divider"></div>
+        <div class="ctrl-group">
+            <button class="btn btn-ghost" id="btnOpenCalibration">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/><path d="m9 14 2 2 4-4"/></svg>
+                Auto-Calibration
+            </button>
+        </div>
+        <div class="ctrl-divider"></div>
         <div class="ctrl-group ctrl-sysinfo">
             <span class="sys-chip">WS: <b id="infoWsUrl">—</b></span>
             <span class="sys-chip">Tần số: <b class="green" id="infoHz">10 Hz</b></span>
@@ -182,6 +189,32 @@
     </div>
 </div>
 
+<div class="modal-overlay hidden" id="calibrationOverlay">
+    <div class="modal-panel">
+        <div class="modal-head">
+            <span class="modal-title">Auto-Calibration</span>
+            <button class="btn-icon" id="btnCloseCalibration">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="calib-actions">
+                <button class="btn btn-ghost" id="btnCalibStart">Bắt đầu</button>
+                <span class="calib-status-text" id="calibStatusText"></span>
+            </div>
+            <div class="calib-empty hidden" id="calibEmpty">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Chưa chạy lần nào</span>
+            </div>
+            <ul class="calib-checklist" id="calibChecklist"></ul>
+            <div class="calib-proposals-section hidden" id="calibProposalsSection">
+                <div class="sub-label">Đề xuất hiệu chỉnh</div>
+                <ul class="calib-proposals-list" id="calibProposalsList"></ul>
+                <button class="btn btn-connect" id="btnCalibApply" disabled>Áp dụng</button>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="disconnect-overlay hidden" id="disconnectOverlay">
     <div class="overlay-card">
         <div class="overlay-dot"></div>

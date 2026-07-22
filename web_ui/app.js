@@ -1077,6 +1077,54 @@ const CalibrationManager = (function() {
     return { init };
 })();
 
+
+// ============================================================
+// MODULE 9: Device Capabilities (badge Gan xe/Tu xa + CPU/nhiet)
+// ============================================================
+const DeviceCapabilitiesManager = (function() {
+    let healthTimer = null;
+
+    function setBadge(text, colorClass) {
+        const el = document.getElementById('deviceBadge');
+        el.textContent = text;
+        el.className = colorClass || '';
+    }
+
+    function fetchHealth() {
+        fetch(`${CONFIG.API_URL}/system/health`)
+            .then(r => r.ok ? r.json() : null)
+            .then(res => {
+                if (!res) return;
+                document.getElementById('infoCpu').textContent =
+                    (res.cpu_percent != null ? res.cpu_percent + '%' : '--');
+                document.getElementById('infoTemp').textContent =
+                    (res.temp_c != null ? res.temp_c + '\u00b0C' : '--');
+            })
+            .catch(() => {});
+    }
+
+    function init() {
+        fetch(`${CONFIG.API_URL}/device/capabilities`)
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(res => {
+                if (res.device === 'pi') {
+                    setBadge('Gần xe (Pi)', 'green');
+                    document.getElementById('cpuChip').classList.remove('hidden');
+                    document.getElementById('tempChip').classList.remove('hidden');
+                    fetchHealth();
+                    healthTimer = setInterval(fetchHealth, 15000);
+                } else {
+                    setBadge('Từ xa', 'amber');
+                }
+            })
+            .catch(() => {
+                setBadge('Từ xa', 'amber');
+            });
+    }
+
+    return { init };
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     // ===== Dang nhap Lab =====
     (function setupLogin() {
@@ -1150,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CrashModal.init();
     CrashTakeover.init();
     CalibrationManager.init();
+    DeviceCapabilitiesManager.init();
     
     const tsEl = document.getElementById('hudTimestamp');
     if (tsEl) {

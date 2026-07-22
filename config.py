@@ -145,3 +145,9 @@ MPU_BASELINE_PERSIST_SEC: Final[float] = 30.0     # ghi DB moi 30s (MPU doc toi 
 
 # ===== Dang nhap Lab: uu tien bien moi truong LAB_PASSWORD, khong co gia tri mac dinh =====
 LAB_PASSWORD = _os.environ.get("LAB_PASSWORD", "")
+
+# ===== Phien dang nhap (session token) - xem auth.py =====
+SESSION_TTL_SEC = int(_os.environ.get("SESSION_TTL_SEC", str(7 * 24 * 3600)))  # 7 ngay
+LOGIN_MAX_FAIL = int(_os.environ.get("LOGIN_MAX_FAIL", "5"))
+LOGIN_LOCK_SEC = int(_os.environ.get("LOGIN_LOCK_SEC", "60"))
+DEVICE_API_KEY = _os.environ.get("DEVICE_API_KEY", "")  # cho may-voi-may (evidence_uploader -> server)

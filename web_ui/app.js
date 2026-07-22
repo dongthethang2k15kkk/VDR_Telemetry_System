@@ -14,6 +14,33 @@ let state = {
     hz: CONFIG.UPDATE_HZ
 };
 
+// ============================================================
+// AUTH: session token (sessionStorage) + wrapper fetch co gan token
+// ============================================================
+function getAuthToken() {
+    return sessionStorage.getItem('vdr_token');
+}
+
+function showLoginOverlay() {
+    const overlay = document.getElementById('loginOverlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+    overlay.style.opacity = '1';
+}
+
+async function apiFetch(path, opts) {
+    opts = opts || {};
+    const headers = Object.assign({}, opts.headers || {});
+    const token = getAuthToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(`${CONFIG.API_URL}${path}`, Object.assign({}, opts, { headers }));
+    if (res.status === 401) {
+        sessionStorage.removeItem('vdr_token');
+        showLoginOverlay();
+    }
+    return res;
+}
+
 function formatHudTime(unixTimestamp) {
     if (!unixTimestamp) return "-- Chưa có dữ liệu --";
     const date = new Date(unixTimestamp * 1000);
@@ -299,7 +326,7 @@ const IncidentLogManager = (function() {
     // 1. Lấy toàn bộ danh sách cảnh báo từ API (Lúc mở trang)
     async function fetchUnresolvedAlerts() {
         try {
-            const res = await fetch(`${CONFIG.API_URL}/alerts`);
+            const res = await apiFetch(`/alerts`);
             const json = await res.json();
             if (json.status === 'success') {
                 listEl.innerHTML = '';
@@ -317,7 +344,7 @@ const IncidentLogManager = (function() {
     async function resolveAlert(id, event) {
         event.stopPropagation(); // Ngăn kích hoạt logic bấm vào list để xem video
         try {
-            const res = await fetch(`${CONFIG.API_URL}/alerts/${id}/resolve`, { method: 'PUT' });
+            const res = await apiFetch(`/alerts/${id}/resolve`, { method: 'PUT' });
             if (res.ok) {
                 UIController.showToast(`Đã xác nhận bảo trì (ID: ${id})`);
                 const row = document.getElementById(`alert-row-${id}`);
@@ -526,7 +553,7 @@ const MaintHistoryManager = (function() {
 
     function open() {
         overlay().classList.remove('hidden');
-        fetch(`${CONFIG.API_URL}/maintenance/history`)
+        apiFetch(`/maintenance/history`)
             .then(r => r.json())
             .then(res => render(res.data || []))
             .catch(() => render([]));
@@ -618,7 +645,7 @@ const DTCScanner = (function() {
         const b = btn();
         if (b) { b.disabled = true; b.textContent = 'Đang quét...'; }
         try {
-            const res = await fetch(`${CONFIG.API_URL}/dtc/scan`, { method: 'POST' });
+            const res = await apiFetch(`/dtc/scan`, { method: 'POST' });
             const j = await res.json();
             renderList(j.data || [], 'Không tìm thấy mã lỗi nào');
             UIController.showToast(`Quét xong: ${j.count || 0} mã lỗi`);
@@ -631,14 +658,14 @@ const DTCScanner = (function() {
 
     async function clearDtc(id) {
         try {
-            const res = await fetch(`${CONFIG.API_URL}/dtc/${id}/clear`, { method: 'PUT' });
+            const res = await apiFetch(`/dtc/${id}/clear`, { method: 'PUT' });
             if (res.ok) { UIController.showToast('Đã đánh dấu xử lý'); fetchHistory(); }
         } catch (e) { UIController.showToast('Lỗi'); }
     }
 
     async function fetchHistory() {
         try {
-            const res = await fetch(`${CONFIG.API_URL}/dtc/history`);
+            const res = await apiFetch(`/dtc/history`);
             const j = await res.json();
             // chi hien ma chua xu ly len dau
             renderList(j.data || [], 'Chưa có mã lỗi');
@@ -664,7 +691,7 @@ const PredictionManager = (function() {
         const el = listEl();
         if (!el) return;
         try {
-            const res = await fetch(`${CONFIG.API_URL}/maintenance/prediction`);
+            const res = await apiFetch(`/maintenance/prediction`);
             const j = await res.json();
             const items = j.data || [];
             el.innerHTML = '';
@@ -710,7 +737,7 @@ const CrashLogManager = (() => {
 
     async function fetchCrashes() {
         try {
-            const res = await fetch(`${CONFIG.API_URL}/crash-events`);
+            const res = await apiFetch(`/crash-events`);
             if (!res.ok) return;
             const data = await res.json();
             render(data.events || []);
@@ -776,7 +803,7 @@ const CrashModal = (() => {
     }
     async function loadObd(id) {
         try {
-            const res = await fetch(`${CONFIG.API_URL}/crash-events/${id}/obd`);
+            const res = await apiFetch(`/crash-events/${id}/obd`);
             if (!res.ok) return;
             const data = await res.json();
             drawObd(data);
@@ -834,7 +861,7 @@ const CrashTakeover = (() => {
         return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
     async function check(){
         try {
-            const res = await fetch(`${CONFIG.API_URL}/crash-events/active`);
+            const res = await apiFetch(`/crash-events/active`);
             if(!res.ok) return;
             const d = await res.json();
             const el = document.getElementById('crashTakeover');
@@ -855,7 +882,7 @@ const CrashTakeover = (() => {
     }
     async function ack(){
         if(!current) return;
-        try { await fetch(`${CONFIG.API_URL}/crash-events/${current.id}/ack`, { method:'PUT' }); } catch(e){}
+        try { await apiFetch(`/crash-events/${current.id}/ack`, { method:'PUT' }); } catch(e){}
         const el = document.getElementById('crashTakeover');
         if(el) el.classList.add('hidden');
         current = null;
@@ -946,7 +973,7 @@ const CalibrationManager = (function() {
     }
 
     function fetchLast() {
-        fetch(`${CONFIG.API_URL}/calibration/last`)
+        apiFetch(`/calibration/last`)
             .then(r => r.ok ? r.json() : null)
             .then(res => {
                 if (!res) { renderChecklist([]); renderProposals([]); return; }
@@ -958,7 +985,7 @@ const CalibrationManager = (function() {
     }
 
     function pollStatus() {
-        fetch(`${CONFIG.API_URL}/calibration/status`)
+        apiFetch(`/calibration/status`)
             .then(r => r.json())
             .then(res => {
                 renderChecklist(res.checks || []);
@@ -989,7 +1016,7 @@ const CalibrationManager = (function() {
         statusText().textContent = '';
         proposalsSection().classList.add('hidden');
         try {
-            const res = await fetch(`${CONFIG.API_URL}/calibration/start`, { method: 'POST' });
+            const res = await apiFetch(`/calibration/start`, { method: 'POST' });
             if (!res.ok) {
                 const j = await res.json().catch(() => ({}));
                 UIController.showToast(j.detail || 'Không bắt đầu được');
@@ -1009,7 +1036,7 @@ const CalibrationManager = (function() {
         btnApply().disabled = true;
         btnApply().textContent = 'Đang ghi...';
         try {
-            const res = await fetch(`${CONFIG.API_URL}/calibration/apply`, { method: 'POST' });
+            const res = await apiFetch(`/calibration/apply`, { method: 'POST' });
             const j = await res.json();
             if (!res.ok) {
                 UIController.showToast(j.detail || 'Áp dụng thất bại');
@@ -1052,7 +1079,7 @@ const DeviceCapabilitiesManager = (function() {
     }
 
     function fetchHealth() {
-        fetch(`${CONFIG.API_URL}/system/health`)
+        apiFetch(`/system/health`)
             .then(r => r.ok ? r.json() : null)
             .then(res => {
                 if (!res) return;
@@ -1065,7 +1092,7 @@ const DeviceCapabilitiesManager = (function() {
     }
 
     function init() {
-        fetch(`${CONFIG.API_URL}/device/capabilities`)
+        apiFetch(`/device/capabilities`)
             .then(r => r.ok ? r.json() : Promise.reject())
             .then(res => {
                 if (res.device === 'pi') {
@@ -1119,7 +1146,7 @@ const StorageManagerUI = (function() {
     }
 
     function fetchStatus() {
-        fetch(`${CONFIG.API_URL}/storage/status`)
+        apiFetch(`/storage/status`)
             .then(r => r.json())
             .then(render)
             .catch(() => { statusText().textContent = 'Không tải được trạng thái'; });
@@ -1139,7 +1166,7 @@ const StorageManagerUI = (function() {
         btnCleanup().textContent = 'Đang dọn...';
         statusText().textContent = '';
         try {
-            const res = await fetch(`${CONFIG.API_URL}/storage/cleanup`, { method: 'POST' });
+            const res = await apiFetch(`/storage/cleanup`, { method: 'POST' });
             const j = await res.json();
             if (!res.ok) {
                 UIController.showToast(j.detail || 'Dọn dẹp thất bại');
@@ -1174,6 +1201,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const err = document.getElementById('loginError');
         if (!overlay || !btn) return;
         const box = overlay.querySelector('.login-box');
+
+        // Da co token con han tu lan truoc (F5 khong bi hoi lai). Neu token thuc
+        // ra da het han, lan goi API dau tien se tra 401 va apiFetch tu dong hien
+        // lai overlay nay - khong can goi rieng 1 API "verify" luc tai trang.
+        if (getAuthToken()) {
+            overlay.style.display = 'none';
+        }
+
         function fail(msg) {
             err.classList.remove('hidden');
             err.textContent = msg;
@@ -1191,13 +1226,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ password: pw })
                 });
-                if (res.ok) {
+                const j = await res.json().catch(() => ({}));
+                if (res.ok && j.token) {
+                    sessionStorage.setItem('vdr_token', j.token);
                     overlay.style.opacity = '0';
                     overlay.style.transition = 'opacity 0.4s ease';
                     setTimeout(() => { overlay.style.display = 'none'; }, 400);
                 } else {
                     btn.classList.remove('loading');
-                    fail('Sai mật khẩu, thử lại');
+                    fail((j && j.detail) || 'Sai mật khẩu, thử lại');
                     input.value = '';
                     input.focus();
                 }
@@ -1276,7 +1313,7 @@ const MaintenanceManager = (function() {
 
     async function fetchMaintenance() {
         try {
-            const res = await fetch(`${CONFIG.API_URL}/maintenance`);
+            const res = await apiFetch(`/maintenance`);
             const json = await res.json();
             if (json.status !== 'success') return;
             if (odoEl) odoEl.textContent = Math.round(json.current_odo).toLocaleString();
@@ -1329,7 +1366,7 @@ const MaintenanceManager = (function() {
         const note = prompt(`Ghi chú (tuỳ chọn) cho "${LABELS[item] || item}":\nVD: Thay Castrol 5W-30 tại Midas Cầu Giấy`, "");
         if (note === null) return;  // bam Cancel -> huy
         try {
-            const res = await fetch(`${CONFIG.API_URL}/maintenance/${item}/done`, {
+            const res = await apiFetch(`/maintenance/${item}/done`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ note })
@@ -1346,7 +1383,7 @@ const MaintenanceManager = (function() {
         const km = parseFloat(input.value);
         if (isNaN(km) || km < 0) { UIController.showToast('Nhập số km hợp lệ'); return; }
         try {
-            const res = await fetch(`${CONFIG.API_URL}/maintenance/odometer`, {
+            const res = await apiFetch(`/maintenance/odometer`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ km })

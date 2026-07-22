@@ -2,38 +2,103 @@ import os
 import subprocess
 import datetime
 import cv2
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import sqlite3
 import asyncio
 import time
 import threading
+import hmac
 import auto_calibration
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+import auth
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import chuẩn từ config
 from config import DATABASE_PATH, SAMPLING_RATE_HZ, LAB_PASSWORD, MPU_BASELINE_SPEED_MAX_KMH
 
-app = FastAPI(title="BK-AutoBlackBox API")
+app = FastAPI(title="BK-AutoBlackBox API", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.post("/api/login")
-def lab_login(payload: dict):
-    """Kiem tra mat khau Lab (so voi config.py)."""
+def lab_login(payload: dict, request: Request):
+    """Kiem tra mat khau Lab, phat hanh session token neu dung."""
+    client_ip = request.client.host if request.client else "unknown"
+
+    allowed, wait_sec = auth.check_rate_limit(client_ip)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Thu lai sau {int(wait_sec)}s")
+
     pw = (payload or {}).get("password", "")
-    if LAB_PASSWORD and pw == LAB_PASSWORD:
-        return {"status": "success"}
+    if LAB_PASSWORD and hmac.compare_digest(pw, LAB_PASSWORD):
+        auth.record_login_success(client_ip)
+        session = auth.create_session(client_ip)
+        return {"status": "success", "token": session["token"], "expires_at": session["expires_at"]}
+
+    auth.record_login_fail(client_ip)
     raise HTTPException(status_code=401, detail="Sai mat khau")
+
+
+@app.post("/api/logout")
+def lab_logout(payload: dict):
+    token = (payload or {}).get("token", "")
+    if token:
+        auth.revoke(token)
+    return {"status": "logged_out"}
+
+
+@app.post("/api/media/sign")
+def media_sign(payload: dict):
+    """Cap chu ky han ngan cho 1 duong dan media. Route nay duoc middleware
+    ben duoi bao ve bang Bearer nhu moi route khac."""
+    path = (payload or {}).get("path", "")
+    if not auth.is_signable(path):
+        raise HTTPException(status_code=400, detail="Duong dan khong duoc phep ky")
+    return auth.sign_path(path)
 
 # Mở CORS để Web UI gọi API thoải mái
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ==========================================
+# KHỐI: CƯỠNG CHẾ XÁC THỰC (deny-by-default)
+# ==========================================
+PUBLIC_PATHS = {
+    "/api/login",
+    "/api/device/capabilities",  # web can probe truoc khi dang nhap de biet Pi hay server
+}
+PROTECTED_PREFIXES = ("/api/", "/stream/")
+
+
+@app.middleware("http")
+async def require_auth_middleware(request: Request, call_next):
+    path = request.url.path
+
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if not path.startswith(PROTECTED_PREFIXES):
+        return await call_next(request)
+
+    if path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    header = request.headers.get("authorization", "")
+    if header.startswith("Bearer "):
+        if auth.verify_token(header[7:].strip()):
+            return await call_next(request)
+
+    if auth.is_signable(path):
+        qp = request.query_params
+        if auth.verify_signature(path, qp.get("exp"), qp.get("sig")):
+            return await call_next(request)
+
+    return JSONResponse(status_code=401, content={"detail": "Chua dang nhap"})
 
 # ==========================================
 # KHỐI 1: KHỞI TẠO & DB HELPER

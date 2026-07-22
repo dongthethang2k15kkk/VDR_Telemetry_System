@@ -4,6 +4,7 @@ Khong dung JWT (kho thu hoi) - dung session token ngau nhien, chi luu HASH
 trong SQLite (giong co che GitHub Personal Access Token). Dung chung cho
 ca api_server.py (Pi) va server_app.py (server) - cung mot module.
 """
+import os as _os
 import time
 import secrets
 import hashlib
@@ -143,3 +144,56 @@ def cleanup_expired():
         conn.commit()
     finally:
         conn.close()
+
+
+# ---------- Signed URL cho media (stream camera, video bang chung) ----------
+# Ly do: <img src>/<video src> khong gan duoc header Authorization. Dung chu ky
+# HMAC han ngan, pham vi hep (1 duong dan) - giong co che S3 pre-signed URL.
+import hmac as _hmac
+from config import LAB_PASSWORD as _LAB_PASSWORD
+
+_MEDIA_SECRET = _os.environ.get("MEDIA_SIGN_SECRET", "") or hashlib.sha256(
+    ("vdr-media-sign:" + (_LAB_PASSWORD or "")).encode("utf-8")
+).hexdigest()
+
+# CHI ky duoc cho cac tien to nay. KHONG mo rong tuy tien - day la ranh gioi an toan.
+SIGNABLE_PREFIXES = ("/stream/camera", "/api/evidence/")
+
+MEDIA_TTL_SEC = {
+    "/stream/camera": 120,      # mo stream ngay sau khi ky
+    "/api/evidence/": 600,      # xem video, can du thoi gian tua
+}
+
+
+def _sign_message(path: str, exp: int) -> str:
+    msg = f"{path}|{exp}".encode("utf-8")
+    return _hmac.new(_MEDIA_SECRET.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
+def is_signable(path: str) -> bool:
+    return any(path == p or path.startswith(p) for p in SIGNABLE_PREFIXES)
+
+
+def sign_path(path: str) -> dict:
+    """Tra {"path", "exp", "sig"}. Goi ham nay CHI sau khi da xac thuc Bearer."""
+    ttl = 300
+    for prefix, t in MEDIA_TTL_SEC.items():
+        if path == prefix or path.startswith(prefix):
+            ttl = t
+            break
+    exp = int(time.time()) + ttl
+    return {"path": path, "exp": exp, "sig": _sign_message(path, exp)}
+
+
+def verify_signature(path: str, exp, sig: str) -> bool:
+    if not sig or exp is None:
+        return False
+    try:
+        exp_i = int(exp)
+    except (TypeError, ValueError):
+        return False
+    if exp_i < int(time.time()):
+        return False
+    if not is_signable(path):
+        return False
+    return _hmac.compare_digest(_sign_message(path, exp_i), sig)

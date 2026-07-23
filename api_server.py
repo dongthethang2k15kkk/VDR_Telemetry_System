@@ -159,6 +159,16 @@ def resolve_alert(alert_id: int):
 @app.websocket("/ws/telemetry")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+
+    try:
+        first = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
+    except Exception:
+        await websocket.close(code=4401)
+        return
+    if first.get("type") != "auth" or not auth.verify_token(first.get("token", "")):
+        await websocket.close(code=4401)
+        return
+
     conn = get_db()
     cursor = conn.cursor()
     

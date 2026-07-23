@@ -79,6 +79,7 @@ function connectWebSocket() {
 
         ws.onopen = () => {
             console.log("WebSocket connected");
+            ws.send(JSON.stringify({ type: 'auth', token: getAuthToken() }));
             state.isConnected = true;
             state.reconnectAttempts = 0;
             UIController.setConnectionStatus('connected');
@@ -94,9 +95,14 @@ function connectWebSocket() {
             }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
             console.log("WebSocket disconnected");
             state.isConnected = false;
+            if (event.code === 4401) {
+                sessionStorage.removeItem('vdr_token');
+                showLoginOverlay();
+                return;   // khong tu dong reconnect
+            }
             handleDisconnect();
         };
 

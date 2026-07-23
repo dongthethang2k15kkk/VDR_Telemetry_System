@@ -14,12 +14,15 @@ import os
 import sqlite3
 import threading
 import asyncio
+import hmac
 
 import paho.mqtt.client as mqtt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
+
+import auth
 
 # ── Config tu env ──
 MQTT_HOST    = os.environ.get("MQTT_HOST", "mqtt")
@@ -29,7 +32,11 @@ MQTT_TLS     = os.environ.get("MQTT_TLS", "0") == "1"
 TOPIC_PREFIX = os.environ.get("MQTT_TOPIC_PREFIX", "vdr")
 SERVER_DB    = os.environ.get("SERVER_DB_PATH", "/data/server_history.db")
 EVIDENCE_DIR = os.environ.get("EVIDENCE_DIR", "/data/evidence")  # noi luu zip upload + video render
-LAB_PASSWORD = os.environ.get("LAB_PASSWORD", "")  # đặt trong .env — để trống thì không thể đăng nhập
+
+# LAB_PASSWORD lay tu config.py, KHONG tu doc os.environ o day nua - dam bao
+# dung MOT nguon duy nhat voi auth.py (module ky signed URL dung chung gia
+# tri nay). Tranh lap loi da tung gap: 2 noi doc LAB_PASSWORD khac nhau -> lech.
+from config import LAB_PASSWORD
 
 # ── Schema lich su tren server (khop cot Pi day len) ──
 _SCHEMA = {
@@ -125,9 +132,54 @@ def _mqtt_thread():
 # ==========================================
 # FASTAPI (phuc vu web)
 # ==========================================
-app = FastAPI(title="VDR Server App")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="VDR Server App", docs_url=None, redoc_url=None, openapi_url=None)
+
+# ==========================================
+# KHOI: CUONG CHE XAC THUC (deny-by-default)
+# ==========================================
+PUBLIC_PATHS = {
+    "/api/login",
+}
+PROTECTED_PREFIXES = ("/api/",)
+
+
+@app.middleware("http")
+async def require_auth_middleware(request: Request, call_next):
+    path = request.url.path
+
+    # Preflight CORS phai di qua, neu chan thi trinh duyet bao loi CORS
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if not path.startswith(PROTECTED_PREFIXES):
+        return await call_next(request)
+
+    if path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Duong 1: Bearer token (moi request tu fetch)
+    header = request.headers.get("authorization", "")
+    if header.startswith("Bearer "):
+        if auth.verify_token(header[7:].strip()):
+            return await call_next(request)
+
+    # Duong 2: chu ky HMAC (chi cho media, vd /api/evidence/xxx)
+    if auth.is_signable(path):
+        qp = request.query_params
+        if auth.verify_signature(path, qp.get("exp"), qp.get("sig")):
+            return await call_next(request)
+
+    return JSONResponse(status_code=401, content={"detail": "Chua dang nhap"})
+
+
+# CORS phai dang ky SAU CUNG (lop ngoai cung), de header CORS duoc gan vao
+# MOI response, ke ca response 401 tra som cua middleware xac thuc o tren.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -137,10 +189,32 @@ def _startup():
 
 
 @app.post("/api/login")
-def lab_login(payload: dict):
-    if LAB_PASSWORD and (payload or {}).get("password", "") == LAB_PASSWORD:
-        return {"status": "success"}
+def lab_login(payload: dict, request: Request):
+    """Kiem tra mat khau Lab, phat hanh session token neu dung."""
+    client_ip = request.client.host if request.client else "unknown"
+
+    allowed, wait_sec = auth.check_rate_limit(client_ip)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Thu lai sau {int(wait_sec)}s")
+
+    pw = (payload or {}).get("password", "")
+    if LAB_PASSWORD and hmac.compare_digest(pw, LAB_PASSWORD):
+        auth.record_login_success(client_ip)
+        session = auth.create_session(client_ip)
+        return {"status": "success", "token": session["token"], "expires_at": session["expires_at"]}
+
+    auth.record_login_fail(client_ip)
     raise HTTPException(status_code=401, detail="Sai mat khau")
+
+
+@app.post("/api/media/sign")
+def media_sign(payload: dict):
+    """Cap chu ky han ngan cho 1 duong dan media (vd /api/evidence/xxx.mp4).
+    Route nay duoc middleware bao ve bang Bearer nhu moi route khac."""
+    path = (payload or {}).get("path", "")
+    if not auth.is_signable(path):
+        raise HTTPException(status_code=400, detail="Duong dan khong duoc phep ky")
+    return auth.sign_path(path)
 
 
 @app.get("/api/alerts")
@@ -234,6 +308,16 @@ def dtc_history():
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(ws: WebSocket):
     await ws.accept()
+
+    try:
+        first = await asyncio.wait_for(ws.receive_json(), timeout=5.0)
+    except Exception:
+        await ws.close(code=4401)
+        return
+    if first.get("type") != "auth" or not auth.verify_token(first.get("token", "")):
+        await ws.close(code=4401)
+        return
+
     try:
         while True:
             await ws.send_json(_live_state)

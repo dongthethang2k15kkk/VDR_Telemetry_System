@@ -56,15 +56,6 @@ def media_sign(payload: dict):
         raise HTTPException(status_code=400, detail="Duong dan khong duoc phep ky")
     return auth.sign_path(path)
 
-# Mở CORS để Web UI gọi API thoải mái
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 # ==========================================
 # KHỐI: CƯỠNG CHẾ XÁC THỰC (deny-by-default)
 # ==========================================
@@ -99,6 +90,17 @@ async def require_auth_middleware(request: Request, call_next):
             return await call_next(request)
 
     return JSONResponse(status_code=401, content={"detail": "Chua dang nhap"})
+
+
+# CORS phai dang ky SAU CUNG (lop ngoai cung), de header CORS duoc gan vao
+# MOI response, ke ca response 401 tra som cua middleware xac thuc o tren.
+# Mở CORS để Web UI gọi API thoải mái
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==========================================
 # KHỐI 1: KHỞI TẠO & DB HELPER

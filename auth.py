@@ -152,9 +152,21 @@ def cleanup_expired():
 import hmac as _hmac
 from config import LAB_PASSWORD as _LAB_PASSWORD
 
-_MEDIA_SECRET = _os.environ.get("MEDIA_SIGN_SECRET", "") or hashlib.sha256(
-    ("vdr-media-sign:" + (_LAB_PASSWORD or "")).encode("utf-8")
-).hexdigest()
+if _os.environ.get("MEDIA_SIGN_SECRET", ""):
+    _MEDIA_SECRET = _os.environ["MEDIA_SIGN_SECRET"]
+elif _LAB_PASSWORD:
+    _MEDIA_SECRET = hashlib.sha256(
+        ("vdr-media-sign:" + _LAB_PASSWORD).encode("utf-8")
+    ).hexdigest()
+else:
+    # LAB_PASSWORD chua duoc cau hinh -> KHONG duoc dan xuat tu chuoi co dinh,
+    # vi bat ky ai cung tinh duoc sha256("vdr-media-sign:") va tu ky URL, di
+    # thang qua middleware ma khong can dang nhap. Sinh ngau nhien moi lan
+    # khoi dong: chu ky ky truoc do (neu co) se vo hieu sau restart, nhung
+    # khong ai doan truoc duoc de gia mao.
+    _MEDIA_SECRET = secrets.token_hex(32)
+    print("⚠️  [AUTH] LAB_PASSWORD trong - MEDIA_SECRET sinh ngau nhien tam thoi. "
+          "Dat LAB_PASSWORD (hoac MEDIA_SIGN_SECRET) truoc khi dua len production.")
 
 # CHI ky duoc cho cac tien to nay. KHONG mo rong tuy tien - day la ranh gioi an toan.
 SIGNABLE_PREFIXES = ("/stream/camera", "/api/evidence/")

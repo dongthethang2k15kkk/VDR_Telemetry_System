@@ -41,6 +41,21 @@ async function apiFetch(path, opts) {
     return res;
 }
 
+// Cho /stream/camera va /api/evidence/{file} - hai cho nay gan thang vao
+// <img src>/<video src>, trinh duyet tu tai, khong gan duoc header Authorization.
+// Xin chu ky han ngan qua route co bao ve, roi gan URL da ky vao src.
+async function getSignedUrl(path) {
+    const res = await apiFetch('/media/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const base = CONFIG.API_URL.replace(/\/api$/, '');
+    return `${base}${j.path}?exp=${j.exp}&sig=${j.sig}`;
+}
+
 function formatHudTime(unixTimestamp) {
     if (!unixTimestamp) return "-- Chưa có dữ liệu --";
     const date = new Date(unixTimestamp * 1000);
@@ -457,10 +472,10 @@ const VideoController = (function() {
     function init() {
     const img = document.createElement('img');
     img.style.cssText = 'width:100%;height:100%;object-fit:contain;position:absolute;inset:0;z-index:2;';
-    img.src = CONFIG.STREAM_URL;
     img.onload  = () => { placeholder.classList.add('hidden'); img.style.visibility = 'visible'; };
     img.onerror = () => { placeholder.classList.remove('hidden'); img.style.visibility = 'hidden'; };
     videoEl.replaceWith(img);
+    getSignedUrl('/stream/camera').then(u => { if (u) img.src = u; });
 }
     function seekVideo(unixTimestamp) {
         if (player) console.log("Seeking video to unix:", unixTimestamp);
@@ -794,7 +809,7 @@ const CrashModal = (() => {
         modal.classList.remove('hidden');
         // Video
         const video = document.getElementById('crashVideo');
-        video.src = `${CONFIG.API_URL}/evidence/${filename}`;
+        getSignedUrl('/api/evidence/' + filename).then(u => { if (u) video.src = u; });
         // Thong tin
         document.getElementById('crashModalInfo').innerHTML =
             `Mức độ <b>${ev.severity}</b> · G-force <b>${ev.gforce}g</b> · Tốc độ trước <b>${ev.speed_before} km/h</b>`;

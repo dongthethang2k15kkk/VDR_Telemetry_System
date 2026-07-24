@@ -1088,6 +1088,173 @@ const CalibrationManager = (function() {
 
 
 // ============================================================
+// MODULE 8b: Chan doan hop nhat (Dempster-Shafer) - BANGIAO_CHAN_DOAN_HOP_NHAT.md
+// ============================================================
+const DiagnosisManager = (function() {
+    const overlay = () => document.getElementById('diagnosisOverlay');
+    const emptyEl = () => document.getElementById('diagEmpty');
+    const resultBlock = () => document.getElementById('diagResultBlock');
+    const decisionBadge = () => document.getElementById('diagDecisionBadge');
+    const hypEl = () => document.getElementById('diagTopHypothesis');
+    const beliefEl = () => document.getElementById('diagBelief');
+    const kEl = () => document.getElementById('diagK');
+    const kNoteEl = () => document.getElementById('diagKNote');
+    const evidenceListEl = () => document.getElementById('diagEvidenceList');
+    const historyListEl = () => document.getElementById('diagHistoryList');
+    const btnRun = () => document.getElementById('btnDiagRun');
+    const statusText = () => document.getElementById('diagStatusText');
+    const inlineSummary = () => document.getElementById('diagInlineSummary');
+
+    // Dung dung ten tieng Viet nhu muc 3.1 cua tai lieu thiet ke
+    const HYP_LABELS = {
+        NORMAL: 'Bình thường',
+        MAF_DEGRADED: 'Cảm biến MAF suy giảm',
+        INTAKE_LEAK: 'Hở đường nạp (chân không)',
+        THERMOSTAT_OPEN: 'Van hằng nhiệt kẹt mở',
+        ECT_SENSOR_FAULT: 'Cảm biến nhiệt độ nước lỗi',
+        IAT_SENSOR_FAULT: 'Cảm biến nhiệt độ khí nạp lỗi',
+        BUS_LINK_FAULT: 'Giắc/cáp OBD-CAN lỗi',
+    };
+    const DECISION_LABELS = {
+        KET_LUAN: 'KẾT LUẬN',
+        NGHI_NGO: 'NGHI NGỜ',
+        KHONG_KET_LUAN: 'KHÔNG KẾT LUẬN',
+    };
+    const DECISION_CLASS = {
+        KET_LUAN: 'diag-badge-ok',
+        NGHI_NGO: 'diag-badge-warn',
+        KHONG_KET_LUAN: 'diag-badge-neutral',
+    };
+
+    function hypLabel(code) { return HYP_LABELS[code] || code || '--'; }
+
+    function evidenceSourcePrefix(source) {
+        // "E1_maf_rpm_sanity" -> "E1", "E6_dtc_P0100" -> "E6"
+        const m = /^E\d+/.exec(source || '');
+        return m ? m[0] : (source || '');
+    }
+
+    function open() {
+        overlay().classList.remove('hidden');
+        fetchHistory();
+    }
+    function close() {
+        overlay().classList.add('hidden');
+    }
+
+    function renderResult(res) {
+        emptyEl().classList.add('hidden');
+        resultBlock().classList.remove('hidden');
+
+        decisionBadge().textContent = DECISION_LABELS[res.decision] || res.decision;
+        decisionBadge().className = 'diag-decision-badge ' + (DECISION_CLASS[res.decision] || 'diag-badge-neutral');
+        hypEl().textContent = hypLabel(res.top_hypothesis);
+        beliefEl().textContent = Math.round((res.belief || 0) * 100) + '%';
+
+        kEl().textContent = (res.conflict_k || 0).toFixed(3);
+        if (res.conflict_k >= 0.75) {
+            kNoteEl().textContent = '— cao, các nguồn đang mâu thuẫn mạnh, kết quả kém tin cậy hơn';
+            kNoteEl().className = 'diag-k-note diag-k-high';
+        } else if (res.conflict_k >= 0.3) {
+            kNoteEl().textContent = '— trung bình';
+            kNoteEl().className = 'diag-k-note diag-k-mid';
+        } else {
+            kNoteEl().textContent = '— thấp, các nguồn khá thống nhất';
+            kNoteEl().className = 'diag-k-note diag-k-low';
+        }
+
+        const list = evidenceListEl();
+        list.innerHTML = '';
+        const sources = res.evidence_sources || [];
+        const details = res.evidence_details || [];
+        if (!details.length) {
+            list.innerHTML = '<li class="diag-evidence-empty">Không có nguồn bằng chứng nào khả dụng lúc này (cần đang nổ máy / đủ dữ liệu).</li>';
+        } else {
+            details.forEach((text, i) => {
+                const li = document.createElement('li');
+                li.className = 'diag-evidence-item';
+                li.innerHTML = `<span class="diag-evidence-src">${evidenceSourcePrefix(sources[i])}</span><span class="diag-evidence-text">${text}</span>`;
+                list.appendChild(li);
+            });
+        }
+
+        const inline = inlineSummary();
+        if (inline) {
+            inline.innerHTML = `<span class="diag-inline-badge ${DECISION_CLASS[res.decision] || 'diag-badge-neutral'}">${DECISION_LABELS[res.decision] || res.decision}</span>
+                <span class="diag-inline-text">${hypLabel(res.top_hypothesis)} (${Math.round((res.belief || 0) * 100)}%)</span>`;
+        }
+    }
+
+    function renderHistoryRow(row) {
+        const decision = row.decision;
+        const ts = row.timestamp_sec ? new Date(row.timestamp_sec * 1000) : null;
+        const pad = n => String(n).padStart(2, '0');
+        const tsText = ts ? `${pad(ts.getHours())}:${pad(ts.getMinutes())}:${pad(ts.getSeconds())}` : '--';
+        const li = document.createElement('li');
+        li.className = 'diag-history-item';
+        li.innerHTML = `<span class="diag-history-time">${tsText}</span>
+            <span class="diag-decision-badge diag-badge-sm ${DECISION_CLASS[decision] || 'diag-badge-neutral'}">${DECISION_LABELS[decision] || decision}</span>
+            <span class="diag-history-hyp">${hypLabel(row.top_hypothesis)}</span>
+            <span class="diag-history-belief">${Math.round((row.belief || 0) * 100)}%</span>`;
+        return li;
+    }
+
+    function fetchHistory() {
+        apiFetch('/diagnosis/history?limit=10')
+            .then(r => r.ok ? r.json() : null)
+            .then(res => {
+                const list = historyListEl();
+                if (!list) return;
+                list.innerHTML = '';
+                const rows = (res && res.data) || [];
+                if (!rows.length) {
+                    list.innerHTML = '<li class="diag-history-empty">Chưa có lần chẩn đoán nào được lưu.</li>';
+                    return;
+                }
+                rows.forEach(row => list.appendChild(renderHistoryRow(row)));
+            })
+            .catch(() => {});
+    }
+
+    async function run() {
+        const b = btnRun();
+        if (b) { b.disabled = true; b.textContent = 'Đang chạy...'; }
+        if (statusText()) statusText().textContent = '';
+        try {
+            const res = await apiFetch('/diagnosis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const j = await res.json();
+            renderResult(j);
+            fetchHistory();
+            if (statusText()) statusText().textContent = 'Hoàn tất.';
+        } catch (e) {
+            if (statusText()) statusText().textContent = 'Chẩn đoán thất bại — kiểm tra kết nối.';
+            UIController.showToast('Chẩn đoán thất bại');
+        } finally {
+            if (b) { b.disabled = false; b.textContent = 'Chạy chẩn đoán'; }
+        }
+    }
+
+    function init() {
+        const btnOpen = document.getElementById('btnOpenDiagnosis');
+        if (btnOpen) btnOpen.addEventListener('click', open);
+        const btnClose = document.getElementById('btnCloseDiagnosis');
+        if (btnClose) btnClose.addEventListener('click', close);
+        const o = overlay();
+        if (o) o.addEventListener('click', (e) => { if (e.target === o) close(); });
+        const b = btnRun();
+        if (b) b.addEventListener('click', run);
+    }
+
+    return { init, run };
+})();
+
+
+// ============================================================
 // MODULE 9: Device Capabilities (badge Gan xe/Tu xa + CPU/nhiet)
 // ============================================================
 const DeviceCapabilitiesManager = (function() {
@@ -1296,6 +1463,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CrashModal.init();
     CrashTakeover.init();
     CalibrationManager.init();
+    DiagnosisManager.init();
     DeviceCapabilitiesManager.init();
     StorageManagerUI.init();
     

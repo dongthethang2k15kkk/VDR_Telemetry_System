@@ -143,6 +143,47 @@ MPU_BASELINE_SPEED_MAX_KMH: Final[float] = 1.0   # duoi nguong nay coi la xe dun
 MPU_BASELINE_EWMA_ALPHA: Final[float] = 0.02      # cham hon HEALTH_EWMA_ALPHA_LAT (0.2) - baseline can on dinh
 MPU_BASELINE_PERSIST_SEC: Final[float] = 30.0     # ghi DB moi 30s (MPU doc toi 50Hz, khong ghi moi lan doc)
 
+# ── GIAI DOAN CHAN DOAN HOP NHAT (Dempster-Shafer) ──────────────────────
+# Nguong KHOI TAO, CAN HIEU CHINH LAI sau khi co du lieu xe that
+# (xem BANGIAO_CHAN_DOAN_HOP_NHAT.md muc 3.2-3.3).
+
+# E1 - MAF vs RPM: dung tich dong co THAT SU cua xe thi nghiem (lit).
+ENGINE_DISPLACEMENT_L: Final[float] = 1.5   # SUA DUNG THEO XE THAT DANG DUNG
+
+# E1 - bien kiem tra hop ly vat ly (sanity bound), KHONG dung lam nguong
+# chan doan chinh - baseline tu hoc moi la nguon chinh (muc 3.2).
+E1_VE_MIN: Final[float] = 0.2
+E1_VE_MAX: Final[float] = 1.0
+E1_MAF_SANITY_MIN_RATIO: Final[float] = 0.2   # MAF do < 0.2x bien duoi -> chac chan sai
+E1_MAF_SANITY_MAX_RATIO: Final[float] = 3.0   # MAF do > 3x bien tren -> chac chan sai
+STANDARD_ATM_PRESSURE_PA: Final[float] = 101325.0
+AIR_GAS_CONSTANT: Final[float] = 287.0        # J/(kg.K)
+
+# Vung RPM dung cho quy trinh kiem tra 10 phut (muc 8) va chon baseline
+# zone cho E1/E2 (garanti vs 2500 vong).
+RPM_IDLE_MIN: Final[float] = 600.0
+RPM_IDLE_MAX: Final[float] = 1000.0
+RPM_2500_TARGET: Final[float] = 2500.0
+RPM_2500_TOLERANCE: Final[float] = 200.0
+
+# E2 - LTFT garanti vs 2500 vong: nguong phan biet MAF_DEGRADED / INTAKE_LEAK
+# (muc 3.3). GIA TRI KHOI TAO, phai hieu chinh sau khi co du lieu xe that.
+E2_DELTA_INTAKE_LEAK_THRESHOLD: Final[float] = 8.0   # %
+E2_DELTA_MAF_THRESHOLD: Final[float] = 3.0            # %
+
+# May da am - moi bang chung dua tren LTFT phai cho qua nguong nay
+# (cam bay #3 muc 13: LTFT luc may lanh vo nghia vi ECU chay vong ho).
+ECT_WARM_THRESHOLD: Final[float] = 80.0   # C
+
+# E3 - IAT vs ECT luc khoi dong nguoi (muc 3.4)
+E3_DELTA_NORMAL_MAX: Final[float] = 5.0    # C, duoi muc nay -> ca hai binh thuong
+E3_DELTA_FAULT_MIN: Final[float] = 10.0    # C, tren muc nay -> mot trong hai loi
+VN_AMBIENT_TEMP_MIN: Final[float] = 15.0   # C, dai nhiet do moi truong hop ly o VN
+VN_AMBIENT_TEMP_MAX: Final[float] = 42.0   # C
+
+# E4 - Duong cong ham nong (muc 3.5). 12 phut = nguong OEM lien quan P0128.
+WARMUP_T80_MAX_SEC: Final[float] = 720.0   # qua moc nay ma chua dat 80C -> nghi thermostat
+
 # ===== Dang nhap Lab: uu tien bien moi truong LAB_PASSWORD, khong co gia tri mac dinh =====
 LAB_PASSWORD = _os.environ.get("LAB_PASSWORD", "")
 

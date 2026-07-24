@@ -154,6 +154,85 @@ def resolve_alert(alert_id: int):
 
 
 # ==========================================
+# KHOI: CHAN DOAN HOP NHAT (Dempster-Shafer)
+# ==========================================
+# CHU Y KIEN TRUC: RuleEngine chay trong OBD_Process rieng (xem main.py),
+# api_server.py chay trong API_Process rieng - HAI TIEN TRINH KHONG CHIA
+# SE BO NHO. Route nay KHONG goi RuleEngine.run_diagnosis_now() (chi dung
+# trong cung tien trinh) - thay vao do TU MO connection DB rieng (giong
+# moi route khac trong file nay), tu doc so lieu song tu bang obd_data,
+# roi goi thang ham thuan diagnosis.run_diagnosis().
+
+def _read_live_data(cursor) -> dict:
+    """Doc gia tri PID moi nhat tu obd_data, dung dinh dang hex khong dem
+    GIONG HET RuleEngine._refresh_from_db() (vd '0xc' cho RPM, khong phai
+    '0x0c') - hai noi phai khop dinh dang thi moi cung doc dung 1 du lieu."""
+    pid_map = {"rpm": 0x0C, "maf": 0x10, "ect": 0x05, "iat": 0x0F, "speed": 0x0D}
+    out = {}
+    for key, pid_int in pid_map.items():
+        row = cursor.execute(
+            "SELECT value FROM obd_data WHERE pid=? ORDER BY timestamp_sec DESC LIMIT 1",
+            (hex(pid_int),)
+        ).fetchone()
+        out[key] = row[0] if row else None
+    return out
+
+
+@app.post("/api/diagnosis")
+def run_diagnosis_endpoint(payload: dict = None):
+    """Chay hoi chan chan doan hop nhat MOT LAN. Doc so lieu song tu DB,
+    cho phep payload JSON bo sung du lieu ma so lieu song khong co san
+    (ltft_idle, ltft_2500, is_cold_start, warmup_series, dtc_codes,
+    flagged_pids, trend_alerts) - danh cho protocol.py (buoc 12) goi sau
+    khi da thu thap du du lieu qua quy trinh huong dan 10 phut. Neu goi
+    khong co payload bo sung, chi E1 (neu RPM dung vung) co co hoi chay,
+    con lai se la Theta - dung nhu thiet ke, khong bao gio crash vi thieu
+    du lieu (xem diagnosis/__init__.py:run_diagnosis())."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        live_data = _read_live_data(cursor)
+        if payload:
+            live_data.update({k: v for k, v in payload.items() if v is not None})
+
+        from diagnosis import run_diagnosis, save_diagnosis_result
+        result = run_diagnosis(cursor, live_data)
+        save_diagnosis_result(cursor, result)
+        conn.commit()
+
+        masses_readable = {"|".join(sorted(k)): round(v, 4) for k, v in result["masses"].items()}
+        return {
+            "status": "success",
+            "decision": result["decision"],
+            "top_hypothesis": result["top_hypothesis"],
+            "belief": round(result["belief"], 4),
+            "plausibility": round(result["plausibility"], 4),
+            "conflict_k": round(result["conflict_k"], 4),
+            "masses": masses_readable,
+            "evidence_count": result["evidence_count"],
+            "evidence_sources": result["evidence_sources"],
+            "evidence_details": result["evidence_details"],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/diagnosis/history")
+def get_diagnosis_history(limit: int = 20):
+    """Lich su cac lan chan doan da chay, moi nhat truoc."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, timestamp_sec, top_hypothesis, belief, plausibility, "
+            "conflict_k, decision, evidence_json FROM diagnosis_results "
+            "ORDER BY timestamp_sec DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return {"status": "success", "data": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+# ==========================================
 # KHỐI 3: WEBSOCKET ENDPOINT (Real-time)
 # ==========================================
 @app.websocket("/ws/telemetry")

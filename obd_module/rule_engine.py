@@ -287,6 +287,30 @@ class RuleEngine(threading.Thread):
             total_km REAL, engine_hours REAL)''')
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value REAL)''')
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS pid_health (pid INTEGER PRIMARY KEY, ewma_latency_ms REAL, ewma_miss_rate REAL, updated_at REAL)''')
+        # Task2/Buoc3 (giai doan chan doan hop nhat): 3 bang moi - baseline_samples,
+        # diagnosis_results, oil_life_state. Xem BANGIAO_CHAN_DOAN_HOP_NHAT.md muc 9.
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS baseline_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            metric TEXT,
+            value REAL,
+            ect_at_sample REAL,
+            iat_at_sample REAL,
+            created_at REAL)''')
+        self.cursor.execute('''CREATE INDEX IF NOT EXISTS idx_baseline_metric
+            ON baseline_samples(metric, created_at)''')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS diagnosis_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp_sec REAL,
+            top_hypothesis TEXT,
+            belief REAL,
+            plausibility REAL,
+            conflict_k REAL,
+            decision TEXT,
+            evidence_json TEXT,
+            created_at REAL)''')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS oil_life_state (
+            key TEXT PRIMARY KEY,
+            value REAL)''')
         self.cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('base_odo', 0)")
         self.conn.commit()
         # -- Migration Task1 RE: engine_hours (idempotent) --
@@ -608,3 +632,31 @@ class RuleEngine(threading.Thread):
                         self.current_data[pid_int] = r[0]
         except Exception:
             pass
+
+    def run_diagnosis_now(self, live_data: dict = None) -> dict:
+        """Chay hoi chan chan doan hop nhat MOT LAN theo yeu cau - KHONG
+        tu dong lap trong vong lap run() 1Hz. San pham dinh vi la 'thiet bi
+        chan doan tai cho 10 phut' (BANGIAO_CHAN_DOAN_HOP_NHAT.md muc 0),
+        khong phai he thong theo doi lien tuc. Goi tu API (buoc 9) hoac
+        protocol.py (buoc 12) khi nguoi dung yeu cau chan doan.
+
+        live_data neu khong truyen se lay tu self.current_data hien co
+        (chi co rpm/maf/ect/iat/speed tuc thoi - E2/E3/E4 can them du lieu
+        ghep cap tu protocol.py, se tu dong khong dong gop neu thieu, xem
+        diagnosis/__init__.py:run_diagnosis())."""
+        from diagnosis import run_diagnosis, save_diagnosis_result
+
+        if live_data is None:
+            with self.obd_data_lock:
+                live_data = {
+                    "rpm": self.current_data.get(0x0C),
+                    "maf": self.current_data.get(0x10),
+                    "ect": self.current_data.get(0x05),
+                    "iat": self.current_data.get(0x0F),
+                    "speed": self.current_data.get(0x0D),
+                }
+
+        result = run_diagnosis(self.cursor, live_data)
+        save_diagnosis_result(self.cursor, result)
+        self.conn.commit()
+        return result

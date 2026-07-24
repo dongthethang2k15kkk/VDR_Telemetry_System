@@ -665,3 +665,80 @@ input:checked + .slider::before { transform:translateX(18px); }
 }
 .calib-proposal-name { color: var(--text-1); }
 .calib-proposal-change { color: var(--text-2); }
+
+/* ================================================================
+   Chan doan hop nhat (Dempster-Shafer) - BANGIAO_CHAN_DOAN_HOP_NHAT.md
+   ================================================================ */
+.modal-panel-wide { width: min(640px, 94vw); }
+
+.diag-empty {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 28px 12px; color: var(--text-3); text-align: center;
+}
+.diag-empty svg { opacity: 0.5; }
+
+.diag-decision-row {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding: 10px 0;
+}
+.diag-decision-badge {
+    font-family: var(--mono); font-weight: 700; font-size: 12px;
+    padding: 4px 10px; border-radius: var(--r-sm); letter-spacing: 0.4px;
+}
+.diag-badge-sm { font-size: 10px; padding: 2px 7px; }
+.diag-badge-ok      { background: var(--green-dim); color: var(--green); }
+.diag-badge-warn    { background: var(--amber-dim); color: var(--amber); }
+.diag-badge-neutral { background: var(--surface-3); color: var(--text-2); }
+
+.diag-hypothesis { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.diag-belief { font-family: var(--mono); font-size: 13px; color: var(--text-2); margin-left: auto; }
+
+.diag-k-row {
+    font-size: 12px; color: var(--text-2); padding: 6px 0 4px;
+    border-top: 1px solid var(--border);
+}
+.diag-k-row b { font-family: var(--mono); color: var(--text-1); }
+.diag-k-note { margin-left: 4px; }
+.diag-k-high { color: var(--red); }
+.diag-k-mid  { color: var(--amber); }
+.diag-k-low  { color: var(--green); }
+
+.diag-evidence-list {
+    list-style: none; margin: 6px 0 10px; padding: 0;
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 220px; overflow-y: auto;
+}
+.diag-evidence-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 12px; padding: 6px 8px;
+    background: var(--surface-2); border-radius: var(--r-sm);
+}
+.diag-evidence-src {
+    flex: 0 0 auto; font-family: var(--mono); font-weight: 700;
+    font-size: 10px; color: var(--blue); background: var(--blue-dim);
+    padding: 1px 6px; border-radius: 4px; margin-top: 1px;
+}
+.diag-evidence-text { color: var(--text-1); line-height: 1.5; }
+.diag-evidence-empty { font-size: 12px; color: var(--text-3); padding: 8px 0; }
+
+.diag-history-list {
+    list-style: none; margin: 6px 0 0; padding: 0;
+    display: flex; flex-direction: column; gap: 4px;
+    max-height: 160px; overflow-y: auto;
+}
+.diag-history-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; padding: 5px 6px; border-bottom: 1px solid var(--border);
+}
+.diag-history-time { font-family: var(--mono); color: var(--text-3); flex: 0 0 56px; }
+.diag-history-hyp { color: var(--text-1); flex: 1; }
+.diag-history-belief { font-family: var(--mono); color: var(--text-2); }
+.diag-history-empty { font-size: 12px; color: var(--text-3); padding: 8px 0; }
+
+.diag-inline-summary { margin-top: 6px; font-size: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.diag-inline-empty { color: var(--text-3); }
+.diag-inline-badge {
+    font-family: var(--mono); font-weight: 700; font-size: 10px;
+    padding: 2px 7px; border-radius: var(--r-sm);
+}
+.diag-inline-text { color: var(--text-2); }

@@ -96,6 +96,13 @@
             <div class="sub-label">Dự báo bảo dưỡng</div>
             <ul class="pred-list" id="predList"></ul>
         </div>
+        <div class="sub-section">
+            <div class="sub-label">Chẩn đoán hợp nhất (bằng chứng D-S)</div>
+            <button class="btn btn-ghost" id="btnOpenDiagnosis"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 2v10l7 4"/></svg> Chẩn đoán tại chỗ</button>
+            <div class="diag-inline-summary" id="diagInlineSummary">
+                <span class="diag-inline-empty">Chưa chạy lần nào</span>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -299,6 +306,44 @@
         <div class="crash-modal-info" id="crashModalInfo"></div>
         <div class="crash-modal-chart-label">Dữ liệu OBD quanh thời điểm va chạm</div>
         <div id="crashObdChart" class="crash-modal-chart"></div>
+    </div>
+</div>
+<div class="modal-overlay hidden" id="diagnosisOverlay">
+    <div class="modal-panel modal-panel-wide">
+        <div class="modal-head">
+            <span class="modal-title">Chẩn đoán hợp nhất — bằng chứng Dempster-Shafer</span>
+            <button class="btn-icon" id="btnCloseDiagnosis">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="calib-actions">
+                <button class="btn btn-connect" id="btnDiagRun">Chạy chẩn đoán</button>
+                <span class="calib-status-text" id="diagStatusText"></span>
+            </div>
+
+            <div class="diag-empty" id="diagEmpty">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Bấm "Chạy chẩn đoán" để hội chẩn từ dữ liệu hiện có</span>
+            </div>
+
+            <div class="diag-result hidden" id="diagResultBlock">
+                <div class="diag-decision-row">
+                    <span class="diag-decision-badge" id="diagDecisionBadge">--</span>
+                    <span class="diag-hypothesis" id="diagTopHypothesis">--</span>
+                    <span class="diag-belief" id="diagBelief">--%</span>
+                </div>
+                <div class="diag-k-row">
+                    Xung đột giữa các nguồn (K = <b id="diagK">--</b>)
+                    <span class="diag-k-note" id="diagKNote"></span>
+                </div>
+                <div class="sub-label" style="margin-top:12px;">Chuỗi bằng chứng</div>
+                <ul class="diag-evidence-list" id="diagEvidenceList"></ul>
+            </div>
+
+            <div class="sub-label" style="margin-top:16px;">Lịch sử gần đây</div>
+            <ul class="diag-history-list" id="diagHistoryList"></ul>
+        </div>
     </div>
 </div>
 <script src="app.js"></script>

@@ -42,6 +42,21 @@ def _parse_name(fname):
     return parts[0], parts[1]
 
 
+def _parse_video_start_ts(fname):
+    """cam_YYYYMMDD_HHMMSS.ts -> unix timestamp TUYET DOI cua frame dau tien
+    trong file (giong logic overlay_engine.py dung tren Pi). Tra None neu
+    ten file khong dung dinh dang - luc do render_engine se fallback ve
+    abs_time=0 va in canh bao ro rang, khong am tham sai."""
+    import re, datetime as _dt
+    m = re.match(r"cam_(\d{8}_\d{6})", os.path.basename(fname))
+    if not m:
+        return None
+    try:
+        return _dt.datetime.strptime(m.group(1), "%Y%m%d_%H%M%S").timestamp()
+    except ValueError:
+        return None
+
+
 def _update_db(crash_id, video_path):
     try:
         conn = sqlite3.connect(SERVER_DB)
@@ -83,7 +98,10 @@ def process_one(zip_path):
     print(f"🔧 [RENDER] {fname}: files={files} video={has_video} obd={obd_ok}")
 
     # ── NAC 2: render that bang render_engine (overlay HUD len video da gop) ──
-    video_in = next((os.path.join(work, x) for x in files if x.endswith((".ts", ".mp4"))), None)
+    video_candidates = sorted(
+        os.path.join(work, x) for x in files if x.endswith((".ts", ".mp4"))
+    )
+    video_in = video_candidates[0] if video_candidates else None
     obd_in   = os.path.join(work, "obd.json")
     out_name = f"evidence_{device}_{crash_id}.mp4"
     out_path = os.path.join(RENDERED_DIR, out_name)
@@ -91,7 +109,17 @@ def process_one(zip_path):
     if not video_in:
         print(f"⚠️  [RENDER] {fname}: khong co video trong goi, bo qua.")
         return
-    rendered = render_engine.render(video_in, obd_in, out_path)
+    if len(video_candidates) > 1:
+        # TODO (muc 10 bao cao ra soat): cua so bang chung thuong vat qua 2
+        # doan .ts 60s. Hien CHI render doan dau, chua ghep nhieu doan.
+        print(f"⚠️  [RENDER] {fname}: co {len(video_candidates)} doan video, "
+              f"hien CHI render doan dau ({os.path.basename(video_in)}) - "
+              f"CAN GHEP NHIEU DOAN o buoc sau, video co the bi thieu.")
+    video_start_ts = _parse_video_start_ts(video_in)
+    if video_start_ts is None:
+        print(f"⚠️  [RENDER] {fname}: khong doc duoc gio bat dau tu ten file "
+              f"'{os.path.basename(video_in)}' - HUD se dung gio render (SAI) lam fallback.")
+    rendered = render_engine.render(video_in, obd_in, out_path, video_start_ts)
     if not rendered:
         print(f"⚠️  [RENDER] {fname}: render that bai, giu zip lai de thu lai sau.")
         return

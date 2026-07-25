@@ -23,8 +23,15 @@ from config import (
 # Thanh ghi MPU-6050
 _MPU_WHO_AM_I = 0x75
 _MPU_PWR_MGMT_1 = 0x6B
+_MPU_ACCEL_CONFIG = 0x1C
 _MPU_ACCEL_XOUT_H = 0x3B
-_ACCEL_SCALE = 16384.0  # LSB/g o range +-2g (mac dinh)
+# QUAN TRONG: mac dinh MPU-6050 khoi dong o dai +-2g (scale 16384 LSB/g).
+# Dai nay chi do toi da ~3.46g tong 3 truc - KHONG DU cho nguong va cham
+# (CRASH_GFORCE_THRESHOLD/SEVERE trong config.py, tinh bang don vi g that).
+# Phai chu dong ghi ACCEL_CONFIG (AFS_SEL=3) de mo dai len +-16g khi khoi tao,
+# xem _detect_mpu(). _ACCEL_SCALE phai khop voi dai da chon.
+_ACCEL_FS_SEL = 0x18          # AFS_SEL=3 (bit 4:3 = 11) -> dai do +-16g
+_ACCEL_SCALE = 2048.0         # LSB/g o dai +-16g
 
 
 class CrashDetector:
@@ -71,7 +78,16 @@ class CrashDetector:
             if who in (0x68, 0x70, 0x72, 0x71, 0x69, 0x98):
                 # Danh thuc MPU (clear sleep bit)
                 self.bus.write_byte_data(CRASH_MPU_I2C_ADDR, _MPU_PWR_MGMT_1, 0)
-                print(f"✅ [CRASH] Phát hiện MPU-6050 tại I2C-{CRASH_MPU_I2C_BUS} (WHO_AM_I=0x{who:02X})")
+                # Mo dai do gia toc len +-16g (mac dinh la +-2g, khong du cho
+                # nguong va cham - xem ghi chu o dinh file). Doc lai de xac nhan
+                # ghi thanh cong, khong am tham chay tiep voi dai sai.
+                self.bus.write_byte_data(CRASH_MPU_I2C_ADDR, _MPU_ACCEL_CONFIG, _ACCEL_FS_SEL)
+                readback = self.bus.read_byte_data(CRASH_MPU_I2C_ADDR, _MPU_ACCEL_CONFIG)
+                if readback != _ACCEL_FS_SEL:
+                    print(f"⚠️  [CRASH] Ghi ACCEL_CONFIG thất bại (đọc lại=0x{readback:02X}, "
+                          f"mong đợi=0x{_ACCEL_FS_SEL:02X}) - dải đo có thể vẫn là ±2g, "
+                          f"phát hiện tai nạn nặng sẽ KHÔNG chính xác.")
+                print(f"✅ [CRASH] Phát hiện MPU-6050 tại I2C-{CRASH_MPU_I2C_BUS} (WHO_AM_I=0x{who:02X}, dải đo ±16g)")
                 return True
             print(f"⚠️  [CRASH] I2C-{CRASH_MPU_I2C_BUS} có thiết bị nhưng WHO_AM_I=0x{who:02X} (không phải MPU)")
             return False
@@ -164,6 +180,37 @@ class CrashDetector:
         return None
 
     # ---------- Xu ly khi crash ----------
+    @staticmethod
+    def _pivot_telemetry_for_render(rows):
+        """Gop cac dong (timestamp_sec, pid_name, value) - da sap xep tang dan -
+        thanh list [{"t","speed","rpm","throttle","temp"}] ma render_engine.py
+        (server) can. Cac PID cung 1 chu ky doc se co CHUNG timestamp_sec (xem
+        can_app.py: enqueue dung cycle_ts), nen chi can gom theo timestamp_sec
+        va dien gia tri thieu bang gia tri gan nhat truoc do (forward-fill),
+        khong can pandas."""
+        field_of = {
+            "Vehicle Speed": "speed", "Engine RPM": "rpm",
+            "Throttle Position": "throttle", "Coolant Temp": "temp",
+        }
+        last = {"speed": 0, "rpm": 0, "throttle": 0, "temp": 0}
+        by_ts = {}
+        order = []
+        for r in rows:
+            field = field_of.get(r["pid_name"])
+            if field is None:
+                continue
+            ts = r["timestamp_sec"]
+            if ts not in by_ts:
+                by_ts[ts] = {}
+                order.append(ts)
+            by_ts[ts][field] = r["value"]
+        out = []
+        for ts in order:
+            last.update(by_ts[ts])
+            out.append({"t": ts, "speed": last["speed"], "rpm": last["rpm"],
+                         "throttle": last["throttle"], "temp": last["temp"]})
+        return out
+
     def _save_evidence_package(self, crash_time):
         """Cat video tho + dump telemetry 30s quanh va cham, luu LOCAL. Khong render."""
         import glob, json, subprocess
@@ -192,6 +239,14 @@ class CrashDetector:
         }
         with open(out_dir / "telemetry.json", "w") as f:
             json.dump(meta, f)
+
+        # --- 1b. Dump obd.json - DINH DANG RIENG ma render_engine.py (server)
+        #     doc: list [{"t","speed","rpm","throttle","temp"}], "t" la unix
+        #     timestamp TUYET DOI (khop voi telemetry.json). telemetry.json
+        #     van giu nguyen lam ban tho day du 7 PID cho muc dich khac.
+        obd_records = self._pivot_telemetry_for_render(rows)
+        with open(out_dir / "obd.json", "w") as f:
+            json.dump(obd_records, f)
 
         # --- 2. Cat video tho (ffmpeg -c copy, KHONG re-encode -> nhe) ---
         cam_files = sorted(glob.glob(str(Path(STORAGE_DIR) / "cam_*.ts")))

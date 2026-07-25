@@ -40,8 +40,8 @@ class TrendAnalyzer:
     P_VALUE_MAX = 0.05     # nguong y nghia thong ke cho Mann-Kendall
 
     _TARGETS = [
-        ("ltft_avg", THRESHOLD_LTFT_CRITICAL, "LTFT", "bugi/kim phun"),
-        ("coolant_avg", THRESHOLD_COOLANT_CRITICAL, "Nhiet do nuoc", "he thong lam mat"),
+        ("ltft_avg", THRESHOLD_LTFT_CRITICAL, "LTFT", "bugi/kim phun", True),
+        ("coolant_avg", THRESHOLD_COOLANT_CRITICAL, "Nhiet do nuoc", "he thong lam mat", False),
     ]
 
     # ---- Toan thuan Python (khong can numpy/scipy) ----
@@ -117,7 +117,7 @@ class TrendAnalyzer:
         """Tra list canh bao predictive. Giu nguyen cau truc dict cu de UI
         khong vo: {pid_name, current_avg, slope, trips_to_threshold, severity, description}."""
         results = []
-        for col, threshold, label, advice in self._TARGETS:
+        for col, threshold, label, advice, bidirectional in self._TARGETS:
             rows = cursor.execute(
                 f"SELECT {col} FROM trip_averages WHERE {col} IS NOT NULL "
                 "ORDER BY id DESC LIMIT 20"
@@ -127,32 +127,42 @@ class TrendAnalyzer:
             if n < self.MIN_TRIPS:
                 continue
 
-            # 1) Co xu huong TANG co y nghia khong? (thay cho slope>0.01 cu)
+            # 1) Co xu huong co y nghia khong? Voi muc bidirectional (vd LTFT,
+            #    nguy hiem ca 2 phia theo config THRESHOLD_LTFT_CRITICAL: > 25
+            #    hoac < -25), xu huong GIAM cung phai bat, khong chi TANG.
             trend, S, z, p = self._mann_kendall(ys)
-            if trend != "increasing":
+            if trend == "increasing":
+                direction = 1
+            elif trend == "decreasing" and bidirectional:
+                direction = -1
+            else:
                 continue
 
             # 2) Do doc ben (Sen) + intercept ben (Kendall-Theil = median(y - slope*x))
             xs = self._x_series(n)
             slope = self._sen_slope(xs, ys)
-            if slope <= 0:
+            if (direction == 1 and slope <= 0) or (direction == -1 and slope >= 0):
                 continue
             intercept = self._median([ys[k] - slope * xs[k] for k in range(n)])
 
             current = ys[-1]
-            if current >= threshold:
+            target = threshold if direction == 1 else -threshold
+            if direction == 1 and current >= target:
                 continue   # da vuot roi -> viec cua rule tuc thoi, khong phai du bao
+            if direction == -1 and current <= target:
+                continue
 
             # 3) Du bao diem cham nguong
-            x_cross = (threshold - intercept) / slope
+            x_cross = (target - intercept) / slope
             crossing = round(x_cross - (n - 1))
             if not (0 < crossing <= self.FORECAST_TRIPS):
                 continue
 
             sev = "warning" if crossing > 3 else "critical"
-            desc = (f"{label} dang tang +{slope:.2f}/chuyen co y nghia "
+            trend_word = "tang" if direction == 1 else "giam"
+            desc = (f"{label} dang {trend_word} {abs(slope):.2f}/chuyen co y nghia "
                     f"(MK p={p:.3f}, hien {current:.1f}) -> du bao cham nguong "
-                    f"{threshold:.0f} sau ~{crossing} chuyen. Nen kiem tra {advice}.")
+                    f"{target:.0f} sau ~{crossing} chuyen. Nen kiem tra {advice}.")
             results.append({
                 "pid_name": col, "current_avg": round(current, 2),
                 "slope": round(slope, 3), "trips_to_threshold": crossing,

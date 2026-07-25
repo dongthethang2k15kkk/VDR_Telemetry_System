@@ -70,8 +70,12 @@ def _open_ffmpeg(output_path, width, height, fps):
     return subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def render(video_path, obd_path, output_path):
-    """Render HUD len video da gop san. Tra True/False."""
+def render(video_path, obd_path, output_path, video_start_ts=None):
+    """Render HUD len video da gop san. Tra True/False.
+    video_start_ts: unix timestamp TUYET DOI cua frame dau tien trong
+    video_path (lay tu ten file cam_YYYYMMDD_HHMMSS.ts, xem render_worker).
+    Neu None -> khong xac dinh duoc gio that, HUD se in gio luc render
+    (fallback, SAI so voi gio tai nan that - se in canh bao)."""
     obd = _load_obd(obd_path)
     fonts = _get_fonts()
 
@@ -95,9 +99,16 @@ def render(video_path, obd_path, output_path):
             ok, frame = cap.read()
             if not ok:
                 break
-            t = idx / fps
-            speed, rpm, throttle, temp = _lookup(obd, t)
-            frame = render_glass_hud(frame, speed, rpm, throttle, temp, fonts, abs_time_sec=0)
+            # POS_MSEC = vi tri THAT trong file (chinh xac bat ke fps bien
+            # thien khi ghi), giong cach overlay_engine.py lam tren Pi -
+            # KHONG dung idx/fps (gia dinh fps co dinh, sai neu ffmpeg drop frame).
+            pos_msec = cap.get(cv2.CAP_PROP_POS_MSEC)
+            if video_start_ts:
+                abs_time = video_start_ts + pos_msec / 1000.0
+            else:
+                abs_time = 0  # khong ro gio that -> HUD fallback datetime.now() (SAI)
+            speed, rpm, throttle, temp = _lookup(obd, abs_time)
+            frame = render_glass_hud(frame, speed, rpm, throttle, temp, fonts, abs_time_sec=abs_time)
             writer.stdin.write(frame.tobytes())
             idx += 1
     finally:

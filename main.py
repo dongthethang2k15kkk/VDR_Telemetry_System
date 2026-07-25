@@ -55,6 +55,10 @@ def run_web_ui_server():
 
 def run_crash_isolated():
     """Chay phat hien tai nan trong process rieng (tu do MPU + OBD speed)."""
+    try:
+        os.setpgrp()
+    except AttributeError:
+        pass
     from crash_detector import CrashDetector
     import time as _t
     cd = CrashDetector()
@@ -205,7 +209,8 @@ def main():
             print("🧹 Đang dọn dẹp và giải phóng tài nguyên phần cứng...")
             
             # Quản lý chu trình tắt máy tuần tự và dứt điểm cho toàn bộ tiến trình con
-            for p in [obd_process, cam_process, api_process, web_process]:
+            for p in [obd_process, cam_process, api_process, web_process,
+                      mqtt_up_process, evidence_up_process]:
                 try:
                     if p and p.is_alive():
                         p.terminate()
@@ -215,6 +220,20 @@ def main():
                             p.kill()  # Force ngắt nếu vẫn bị kẹt deadlock lock nội bộ
                 except Exception as e:
                     print(f"⚠️ Lỗi khi tắt tiến trình {p.name if p else 'Unknown'}: {e}")
+
+            # crash_process rieng: co the dang trong ~15-20s cho camera ghi du
+            # phan sau va cham (EVIDENCE_POST_SEC + CAMERA_LATENCY_SEC) truoc
+            # khi chot goi bang chung - can nhieu thoi gian hon 4 tien trinh tren,
+            # neu khong se mat bang chung cua vu tai nan vua xay ra dung luc tat may.
+            try:
+                if crash_process and crash_process.is_alive():
+                    crash_process.terminate()
+                    crash_process.join(timeout=20)
+                    if crash_process.is_alive():
+                        print(f"⚠️ Tiến trình {crash_process.name} không phản hồi dọn dẹp, cưỡng chế kill!")
+                        crash_process.kill()
+            except Exception as e:
+                print(f"⚠️ Lỗi khi tắt tiến trình crash: {e}")
                 
             print("✅ Tắt máy an toàn")
 

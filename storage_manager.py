@@ -52,9 +52,55 @@ class DiskRotation(threading.Thread):
         except Exception as e:
             print(f"⚠️ Lỗi khi dọn dẹp DB: {e}")
 
+    def _cleanup_evidence_folders(self) -> None:
+        """Don cac thu muc evidence_* DA UPLOAD THANH CONG (marker 'UPLOADED:'
+        trong crash_events.evidence_path) va cu hon retention_days. Chay moi
+        vong lap, KHONG phu thuoc nguong dia day - vi thu muc bang chung
+        khong nam trong danh sach quet cua delete_oldest_files() (chi quet
+        .mp4/.ts o thu muc goc, khong de quy vao thu muc con).
+        TUYET DOI KHONG dong vao thu muc con dang 'PENDING_UPLOAD:' - mat
+        bang chung phap ly chua kip gui la khong the chap nhan duoc."""
+        from config import DATABASE_PATH
+        import sqlite3
+        try:
+            conn = sqlite3.connect(str(DATABASE_PATH))
+            uploaded = {
+                row[0].split(":", 1)[1]
+                for row in conn.execute(
+                    "SELECT evidence_path FROM crash_events "
+                    "WHERE evidence_path LIKE 'UPLOADED:%'"
+                ).fetchall()
+            }
+            conn.close()
+        except Exception as e:
+            print(f"⚠️  Lỗi đọc crash_events để dọn thư mục bằng chứng: {e}")
+            return
+
+        cutoff = time.time() - (self.retention_days * 86400)
+        try:
+            names = os.listdir(STORAGE_DIR)
+        except Exception as e:
+            print(f"⚠️  Lỗi liệt kê {STORAGE_DIR}: {e}")
+            return
+        for name in names:
+            if not name.startswith("evidence_"):
+                continue
+            full = os.path.join(STORAGE_DIR, name)
+            if not os.path.isdir(full):
+                continue
+            if name not in uploaded:
+                continue  # chua upload xong (hoac khong khop DB) -> giu nguyen, khong dong vao
+            try:
+                if os.path.getmtime(full) < cutoff:
+                    shutil.rmtree(full)
+                    print(f"🗑️  Đã xóa thư mục bằng chứng đã upload (quá {self.retention_days} ngày): {name}")
+            except Exception as e:
+                print(f"⚠️  Lỗi xóa thư mục bằng chứng {name}: {e}")
+
     def run(self) -> None:
         print(f"🧹 Khởi động Storage Manager (Ngưỡng: {self.threshold}% | Giữ DB: {self.retention_days} ngày)")
         while True:
+            self._cleanup_evidence_folders()
             usage = self.get_disk_usage()
             if usage > self.threshold:
                 print(f"🚨 CẢNH BÁO: Ổ đĩa đang dùng {usage:.1f}% (> {self.threshold}%). Kích hoạt dọn dẹp...")

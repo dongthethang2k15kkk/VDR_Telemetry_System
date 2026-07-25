@@ -23,6 +23,7 @@ import requests
 import config
 
 SCAN_INTERVAL_SEC = getattr(config, "EVIDENCE_UPLOAD_INTERVAL_SEC", 20)
+DEVICE_API_KEY = getattr(config, "DEVICE_API_KEY", "")
 SERVER_API_URL = getattr(config, "SERVER_API_URL", "http://localhost:8080/api")
 DEVICE_ID = getattr(config, "MQTT_DEVICE_ID", "pi-01")
 
@@ -67,6 +68,7 @@ def _upload_one(conn, row):
             f"{SERVER_API_URL}/upload-evidence",
             data={"device": DEVICE_ID, "crash_id": crash_id},
             files={"file": (f"{folder_name}.zip", zip_bytes, "application/zip")},
+            headers={"X-Device-Key": DEVICE_API_KEY} if DEVICE_API_KEY else {},
             timeout=30,
         )
         resp.raise_for_status()
@@ -85,6 +87,10 @@ def _upload_one(conn, row):
 
 
 def main():
+    if not DEVICE_API_KEY:
+        print("⚠️  [EVUP] DEVICE_API_KEY trống - mọi lần upload sẽ bị server từ chối "
+              "(401), thử lại vô hạn không bao giờ thành công. Đặt DEVICE_API_KEY "
+              "trong config.py trên Pi, giống hệt giá trị trong .env của server.")
     print(f"🚀 [EVUP] Uploader bang chung: {SERVER_API_URL}, quet moi {SCAN_INTERVAL_SEC}s")
     conn = _db()
     try:

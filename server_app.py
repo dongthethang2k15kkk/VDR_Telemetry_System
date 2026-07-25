@@ -36,14 +36,21 @@ EVIDENCE_DIR = os.environ.get("EVIDENCE_DIR", "/data/evidence")  # noi luu zip u
 # LAB_PASSWORD lay tu config.py, KHONG tu doc os.environ o day nua - dam bao
 # dung MOT nguon duy nhat voi auth.py (module ky signed URL dung chung gia
 # tri nay). Tranh lap loi da tung gap: 2 noi doc LAB_PASSWORD khac nhau -> lech.
-from config import LAB_PASSWORD
+# DEVICE_API_KEY: khoa may-voi-may danh rieng cho evidence_uploader.py (Pi)
+# goi len route /api/upload-evidence - KHONG dung Bearer token nguoi dung
+# (Pi khong dang nhap web, chi co 1 khoa co dinh chia se qua .env).
+from config import LAB_PASSWORD, DEVICE_API_KEY
 
 # ── Schema lich su tren server (khop cot Pi day len) ──
+# Cot "id INTEGER" KHONG con la PRIMARY KEY don le - khoa chinh that su la
+# GHEP (device, id), them vao luc CREATE TABLE trong _init_db(), khong o day
+# (giu chuoi nay chi la danh sach cot thuan, de _save_event() tach bang
+# split(",") khong bi vo boi dau phay trong "PRIMARY KEY (device, id)").
 _SCHEMA = {
-    "crash_events": "id INTEGER PRIMARY KEY, device TEXT, timestamp_sec REAL, severity TEXT, gforce REAL, tilt REAL, speed_before REAL, source TEXT, evidence_path TEXT, acknowledged INTEGER",
-    "alert_logs":   "id INTEGER PRIMARY KEY, device TEXT, timestamp_sec REAL, category TEXT, source TEXT, item TEXT, value TEXT, severity TEXT, description TEXT",
-    "dtc_logs":     "id INTEGER PRIMARY KEY, device TEXT, timestamp_sec REAL, dtc_code TEXT, description TEXT, is_cleared INTEGER",
-    "trip_logs":    "id INTEGER PRIMARY KEY, device TEXT, start_time REAL, end_time REAL, total_km REAL, engine_hours REAL",
+    "crash_events": "id INTEGER, device TEXT, timestamp_sec REAL, severity TEXT, gforce REAL, tilt REAL, speed_before REAL, source TEXT, evidence_path TEXT, acknowledged INTEGER",
+    "alert_logs":   "id INTEGER, device TEXT, timestamp_sec REAL, category TEXT, source TEXT, item TEXT, value TEXT, severity TEXT, description TEXT",
+    "dtc_logs":     "id INTEGER, device TEXT, timestamp_sec REAL, dtc_code TEXT, description TEXT, is_cleared INTEGER",
+    "trip_logs":    "id INTEGER, device TEXT, start_time REAL, end_time REAL, total_km REAL, engine_hours REAL",
 }
 
 _db_lock = threading.Lock()
@@ -61,7 +68,11 @@ def _init_db():
     os.makedirs(os.path.dirname(SERVER_DB), exist_ok=True)
     conn = _db()
     for tbl, cols in _SCHEMA.items():
-        conn.execute(f"CREATE TABLE IF NOT EXISTS {tbl} ({cols})")
+        # Khoa chinh GHEP (device, id) - id la so tu tang CUC BO cua tung
+        # Pi: xe pi-01 va pi-02 deu co the co id=1, ghep voi device moi la
+        # khoa duy nhat toan cuc - thieu no thi INSERT OR IGNORE se am
+        # tham vut du lieu cua xe thu hai.
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {tbl} ({cols}, PRIMARY KEY (device, id))")
     conn.commit()
     conn.close()
     print(f"🗄️  [SRV] DB lich su san sang: {SERVER_DB}")
@@ -139,6 +150,7 @@ app = FastAPI(title="VDR Server App", docs_url=None, redoc_url=None, openapi_url
 # ==========================================
 PUBLIC_PATHS = {
     "/api/login",
+    "/api/system/mode",  # khong nhay cam, web can hoi truoc ca luc chua dang nhap
 }
 PROTECTED_PREFIXES = ("/api/",)
 
@@ -169,6 +181,13 @@ async def require_auth_middleware(request: Request, call_next):
         if auth.verify_signature(path, qp.get("exp"), qp.get("sig")):
             return await call_next(request)
 
+    # Duong 3: khoa may-voi-may (chi Pi -> server, danh RIENG cho route
+    # upload bang chung - Pi khong co Bearer token vi khong dang nhap web).
+    if path == "/api/upload-evidence" and DEVICE_API_KEY:
+        device_key = request.headers.get("x-device-key", "")
+        if hmac.compare_digest(device_key, DEVICE_API_KEY):
+            return await call_next(request)
+
     return JSONResponse(status_code=401, content={"detail": "Chua dang nhap"})
 
 
@@ -184,6 +203,10 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _startup():
+    if not DEVICE_API_KEY:
+        print("⚠️  [SRV] DEVICE_API_KEY trống - route /api/upload-evidence sẽ luôn "
+              "từ chối Pi (401). Đặt DEVICE_API_KEY giống nhau ở cả .env server "
+              "và config.py trên Pi trước khi dùng thật.")
     _init_db()
     threading.Thread(target=_mqtt_thread, daemon=True).start()
 
@@ -215,6 +238,15 @@ def media_sign(payload: dict):
     if not auth.is_signable(path):
         raise HTTPException(status_code=400, detail="Duong dan khong duoc phep ky")
     return auth.sign_path(path)
+
+
+@app.get("/api/system/mode")
+def system_mode():
+    """Cho web_ui phan biet dang mo qua server_app.py (chi vai route) hay
+    qua api_server.py tren Pi (day du tinh nang) - dung de an/khoa cac nut
+    chua ho tro thay vi de 404 / quay vong vo han (xem
+    BANGIAO_CHAN_DOAN_HOP_NHAT.md, review issue #5)."""
+    return {"mode": "server"}
 
 
 @app.get("/api/alerts")

@@ -11,8 +11,25 @@ let state = {
     mode: 'live',
     isConnected: false,
     reconnectAttempts: 0,
-    hz: CONFIG.UPDATE_HZ
+    hz: CONFIG.UPDATE_HZ,
+    isServerMode: false   // true khi dashboard dang mo qua server_app.py (khong phai Pi truc tiep) - xem checkServerMode()
 };
+
+const _serverOnlyToastShown = new Set();
+
+// server_app.py co /api/system/mode tra {"mode":"server"}; api_server.py
+// (Pi) khong co route nay -> 404 -> res.ok=false -> isServerMode giu nguyen
+// false (mac dinh coi la Pi, day du tinh nang). An toan theo huong "khong
+// chan nham" neu co gi bat thuong (mang cham, CORS...).
+async function checkServerMode() {
+    try {
+        const res = await apiFetch('/system/mode');
+        if (res.ok) {
+            const j = await res.json();
+            state.isServerMode = j.mode === 'server';
+        }
+    } catch (e) { /* im lang, giu mac dinh la Pi */ }
+}
 
 // ============================================================
 // AUTH: session token (sessionStorage) + wrapper fetch co gan token
@@ -37,6 +54,14 @@ async function apiFetch(path, opts) {
     if (res.status === 401) {
         sessionStorage.removeItem('vdr_token');
         showLoginOverlay();
+    } else if (res.status === 404 && state.isServerMode && path !== '/system/mode' && !_serverOnlyToastShown.has(path)) {
+        // Dang o server_app.py (chi ho tro vai chuc route) va gap 404 o mot
+        // route Pi-only - bao mot lan duy nhat cho moi path, khong de tung
+        // module tu quay vong retry vo han hay hien loi trang (issue #5).
+        _serverOnlyToastShown.add(path);
+        if (typeof UIController !== 'undefined' && UIController.showToast) {
+            UIController.showToast('Tính năng này chỉ khả dụng khi xem trực tiếp từ Pi (LAN)');
+        }
     }
     return res;
 }
@@ -1462,6 +1487,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CrashLogManager.init();
     CrashModal.init();
     CrashTakeover.init();
+    checkServerMode();
     CalibrationManager.init();
     DiagnosisManager.init();
     DeviceCapabilitiesManager.init();

@@ -57,12 +57,15 @@ def _parse_video_start_ts(fname):
         return None
 
 
-def _update_db(crash_id, video_path):
+def _update_db(crash_id, video_path, device):
+    """LUON kem dieu kien device trong WHERE - id la so tu tang CUC BO cua
+    tung Pi, thieu device se co the cap nhat NHAM video vao su co cua
+    MOT XE KHAC trung id (xem BANGIAO_CHAN_DOAN_HOP_NHAT.md, review issue #6)."""
     try:
         conn = sqlite3.connect(SERVER_DB)
         conn.execute(
-            "UPDATE crash_events SET evidence_path=? WHERE id=?",
-            (video_path, int(crash_id)),
+            "UPDATE crash_events SET evidence_path=? WHERE id=? AND device=?",
+            (video_path, int(crash_id), device),
         )
         conn.commit()
         n = conn.total_changes
@@ -124,7 +127,7 @@ def process_one(zip_path):
         print(f"⚠️  [RENDER] {fname}: render that bai, giu zip lai de thu lai sau.")
         return
 
-    n = _update_db(crash_id, out_path)
+    n = _update_db(crash_id, out_path, device)
     if n > 0:
         print(f"✅ [RENDER] crash_id={crash_id} -> {out_name} (DB cap nhat)")
     else:
